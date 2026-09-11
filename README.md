@@ -78,6 +78,9 @@ connectivity (the version endpoint alone does not prove authentication), then us
 to select an operation and call its execution lane. Use a read of a private repository to verify the service account before making
 changes; use a disposable repository for your first mutation.
 
+See [tested clients and temporary-result handling](docs/clients.md) for compatibility
+limits and repeatable checks.
+
 The container image is also published privately at
 `ghcr.io/chrisbennight/mcp-gitea-rs:sha-<commit>` after CI passes on main.
 Authenticate your Docker client to GHCR before pulling it. Use an immutable

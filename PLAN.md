@@ -6,25 +6,28 @@ GitHub repository starts from the current source snapshot without prior Git
 history. Repository and package visibility remain private until a separate
 publication decision.
 
-## Migration
+## Implemented during private preparation
 
-- Import the reviewed source tree as a fresh root commit.
-- Run validation and container smoke tests in GitHub Actions without lab DNS,
-  private actions, or an artifact-proxy requirement.
-- Publish privately to GHCR from trusted main pushes using the workflow token.
-- Use Dependabot for Cargo, Docker, and Actions updates.
-- Verify real CI/publication results and arrange AERB access and required checks.
+- Import the source as a fresh GitHub root without Gitea history.
+- Run GitHub Actions validation and Docker smoke without lab DNS, private
+  actions, or a mandatory artifact proxy; publish privately to GHCR.
+- Use Dependabot for dependency updates and AERB for current-head PR review.
+- Allow PAT-only setup while retaining optional token lifecycle and repository
+  bootstrap capabilities (issue #8, PR #11).
+- Validate Docker with independent Python and TypeScript MCP clients and explain
+  temporary-resource recovery and file-upload limits (issue #9, PR #13).
+- Validate stable version tags, preserve immutable version aliases, gate
+  publication on OSV checks, and include distribution metadata (issue #10,
+  PR #14). See [container releases](docs/releases.md) for the procedure.
 
-## Remaining usability work
+## Remaining administration and public-release review
 
-- Deliver PAT-only setup and retain optional token lifecycle and repository
-  bootstrap capabilities (tracked in GitHub issue #8).
-- Exercise the Docker walkthrough with independent MCP clients; record protocol,
-  schema, retained-resource, and file-upload compatibility.
-- Improve resource-lifetime visibility without inviting unsafe mutation retries.
-- Prepare versioned container artifacts and document the source/dependency
-  review (GitHub issue #10). Complete third-party notices and the public-release
-  ownership/security-reporting review before changing visibility.
+- Configure main-branch protection and native Dependabot security alerts/updates
+  in GitHub. The source workflows do not establish those owner settings.
+- Complete third-party notices before public distribution (issue #12). The
+  image inventory and project license do not replace upstream notices.
+- Confirm source publication rights, a working private security-report route,
+  and the exact source/image contents before changing visibility.
 
 Stdio, ARM images, additional Gitea/Forgejo versions, and multi-user remote
 operation are separate future decisions. No work here requires migrating
