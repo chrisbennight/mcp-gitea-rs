@@ -3,7 +3,7 @@
 GitHub Actions is the CI entry point. `CI` calls the test and image workflows on
 pull requests, main/tag pushes, and manual dispatch. Validation covers formatting,
 Clippy, Rust tests/docs, catalog regeneration, Python checks, disposable Gitea
-integration tests, and an amd64 image health check. Jobs have bounded run times.
+integration tests, and amd64 image health and independent MCP client checks. Jobs have bounded run times.
 
 Only a push to main or a `v*` tag in `chrisbennight/mcp-gitea-rs` can publish. The publication
 job has `packages: write`; tests and PR image jobs have only `contents: read`.
