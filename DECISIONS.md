@@ -168,7 +168,11 @@ them rather than publishing them as tool definitions.
 
 Ordinary calls use a service PAT. Access-token lifecycle calls use separately
 configured Basic Auth credentials. Caller input can never select or supply an
-upstream credential.
+upstream credential. Both Basic Auth values may be omitted for PAT-only use;
+a partial pair is a configuration error. Token tools stay discoverable and
+report the missing configuration. Bootstrap checks whether token administration
+is needed before sending any upstream request, so optional credentials cannot
+cause a known failure after repository creation.
 
 ## Secret input uses the MCP file-transfer boundary
 

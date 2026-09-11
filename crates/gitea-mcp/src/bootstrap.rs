@@ -35,6 +35,12 @@ pub struct Arguments {
     access_token: Option<CreateAccessToken>,
 }
 
+impl Arguments {
+    pub fn requires_token_administration(&self) -> bool {
+        self.access_token.is_some()
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum OwnerKind {
@@ -398,17 +404,30 @@ fn validate_branch_protections(
 
 pub async fn execute(
     client: &GiteaClient,
-    token_client: &TokenLifecycleClient,
+    token_client: Option<&TokenLifecycleClient>,
     arguments: Arguments,
 ) -> BootstrapResult {
     let mut result = BootstrapResult::new();
+    if arguments.requires_token_administration() && token_client.is_none() {
+        result.failed_step(
+            "access_token",
+            "access_token.create",
+            None,
+            "Token administration is not configured; no upstream request was sent",
+        );
+        return result;
+    }
     let repository_name = repository_name(&arguments)
         .expect("validated repository declaration")
         .to_string();
     if !verify_owner(client, &arguments, &mut result).await
         || !ensure_repository(client, &arguments, &repository_name, &mut result).await
         || !apply_repository_state(client, &arguments, &repository_name, &mut result).await
-        || !apply_access_token(token_client, &arguments, &mut result).await
+    {
+        return result;
+    }
+    if let Some(token_client) = token_client
+        && !apply_access_token(token_client, &arguments, &mut result).await
     {
         return result;
     }
@@ -2368,12 +2387,10 @@ mod tests {
         let (upstream_url, upstream) = loopback_responses(responses).await;
         let arguments = parsed(&declaration);
         validate(&arguments).expect("valid declaration");
-        let result = execute(
-            &client(&upstream_url),
-            &token_client(&upstream_url),
-            arguments,
-        )
-        .await;
+        let tokens = arguments
+            .requires_token_administration()
+            .then(|| token_client(&upstream_url));
+        let result = execute(&client(&upstream_url), tokens.as_ref(), arguments).await;
         upstream.await.expect("upstream");
         result
     }

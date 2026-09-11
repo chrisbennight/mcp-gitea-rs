@@ -16,11 +16,22 @@ const MAX_ALLOWED_HOSTS: usize = 32;
 const MAX_HOST_CHARACTERS: usize = 255;
 
 #[derive(Clone)]
+pub struct TokenCredentials {
+    pub username: String,
+    pub password: String,
+}
+
+impl fmt::Debug for TokenCredentials {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("TokenCredentials([REDACTED])")
+    }
+}
+
+#[derive(Clone)]
 pub struct Settings {
     pub upstream_url: String,
     pub service_token: String,
-    pub token_username: String,
-    pub token_password: String,
+    pub token_credentials: Option<TokenCredentials>,
     pub gateway_bearer_current: String,
     pub gateway_bearer_previous: Option<String>,
     pub host: String,
@@ -39,8 +50,10 @@ impl fmt::Debug for Settings {
             .debug_struct("Settings")
             .field("upstream_url", &self.upstream_url)
             .field("service_token", &"[REDACTED]")
-            .field("token_username", &"[configured]")
-            .field("token_password", &"[REDACTED]")
+            .field(
+                "token_administration_configured",
+                &self.token_credentials.is_some(),
+            )
             .field("gateway_bearer_current", &"[REDACTED]")
             .field(
                 "gateway_bearer_previous_configured",
@@ -78,8 +91,19 @@ impl Settings {
     pub fn from_env() -> Result<Self, SettingsError> {
         let upstream_url = required("GITEA_MCP_UPSTREAM_URL")?;
         let service_token = required("GITEA_MCP_SERVICE_TOKEN")?;
-        let token_username = required("GITEA_MCP_TOKEN_USERNAME")?;
-        let token_password = required("GITEA_MCP_TOKEN_PASSWORD")?;
+        let token_credentials = match (
+            optional("GITEA_MCP_TOKEN_USERNAME"),
+            optional("GITEA_MCP_TOKEN_PASSWORD"),
+        ) {
+            (None, None) => None,
+            (Some(username), Some(password)) => Some(TokenCredentials { username, password }),
+            _ => {
+                return Err(SettingsError::Invalid {
+                    name: "GITEA_MCP_TOKEN_USERNAME/GITEA_MCP_TOKEN_PASSWORD",
+                    message: "configure both credentials or omit both".to_string(),
+                });
+            }
+        };
         let gateway_bearer_current = required("GITEA_MCP_GATEWAY_BEARER_CURRENT")?;
         validate_bearer("GITEA_MCP_GATEWAY_BEARER_CURRENT", &gateway_bearer_current)?;
         let gateway_bearer_previous = env::var("GITEA_MCP_GATEWAY_BEARER_PREVIOUS")
@@ -118,8 +142,7 @@ impl Settings {
         Ok(Self {
             upstream_url,
             service_token,
-            token_username,
-            token_password,
+            token_credentials,
             gateway_bearer_current,
             gateway_bearer_previous,
             host: value_or("GITEA_MCP_HOST", DEFAULT_HOST),
@@ -132,6 +155,10 @@ impl Settings {
             log_level: value_or("GITEA_MCP_LOG_LEVEL", "info"),
         })
     }
+}
+
+fn optional(name: &str) -> Option<String> {
+    env::var(name).ok().filter(|value| !value.is_empty())
 }
 
 fn required(name: &'static str) -> Result<String, SettingsError> {
@@ -247,8 +274,10 @@ mod tests {
         let settings = Settings {
             upstream_url: "https://gitea.example.test".to_string(),
             service_token: "visible-only-if-debug-is-unsafe".to_string(),
-            token_username: "visible-token-user".to_string(),
-            token_password: "visible-token-password".to_string(),
+            token_credentials: Some(TokenCredentials {
+                username: "visible-token-user".to_string(),
+                password: "visible-token-password".to_string(),
+            }),
             gateway_bearer_current: "current-visible-only-if-debug-is-unsafe".to_string(),
             gateway_bearer_previous: Some("previous-visible-only-if-debug-is-unsafe".to_string()),
             host: DEFAULT_HOST.to_string(),

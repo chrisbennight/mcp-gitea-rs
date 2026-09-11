@@ -17,10 +17,11 @@ The supported container platform is Linux amd64; the pinned upstream is Gitea
 ## Run with Docker
 
 You need Docker, a reachable Gitea instance, a service personal access token
-(PAT), and a dedicated account for token administration. The current server
-requires token-administration credentials even if you only use ordinary API
-operations. That account must support password-based API authentication; do not
-weaken a human account's authentication to satisfy this requirement.
+(PAT), and an ingress bearer. Token-administration credentials are optional;
+ordinary operations and repository bootstrap without token creation need only
+the service PAT. To manage access tokens, configure a dedicated account that
+supports password-based API authentication. Do not weaken a human account's
+authentication to enable this optional capability.
 
 Build from your authenticated checkout:
 
@@ -30,8 +31,8 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-Edit `.env` locally. Set your Gitea URL, service token, token-administration
-username/password, and a random ingress bearer of at least 32 bytes. Keep this
+Edit `.env` locally. Set your Gitea URL, service token, and a random ingress
+bearer of at least 32 bytes. Keep this
 file out of commits and conversations. To replace the bearer placeholder with
 an independently generated value without displaying it:
 

@@ -23,8 +23,6 @@ trap cleanup EXIT
 docker create --name "$name" \
   -e GITEA_MCP_UPSTREAM_URL=http://127.0.0.1:9 \
   -e GITEA_MCP_SERVICE_TOKEN=smoke-token \
-  -e GITEA_MCP_TOKEN_USERNAME=smoke-user \
-  -e GITEA_MCP_TOKEN_PASSWORD=smoke-password \
   -e GITEA_MCP_GATEWAY_BEARER_CURRENT=0123456789abcdef0123456789abcdef \
   "$image" >/dev/null
 docker start "$name" >/dev/null
