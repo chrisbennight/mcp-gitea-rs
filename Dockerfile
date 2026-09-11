@@ -10,7 +10,7 @@ WORKDIR /app
 ARG CRATES_INDEX_URL
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends cmake \
+    && apt-get install --yes --no-install-recommends cmake python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
 
@@ -27,10 +27,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked --bin mcp-gitea-rs \
     && cp target/release/mcp-gitea-rs /usr/local/bin/mcp-gitea-rs
 
+RUN cargo metadata --locked --format-version 1 > /tmp/dependency-metadata.json \
+    && python3 scripts/dependency_inventory.py /tmp/dependency-metadata.json Cargo.lock /distribution/dependencies.json
+
 FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
 LABEL org.opencontainers.image.source="https://github.com/chrisbennight/mcp-gitea-rs"
 LABEL org.opencontainers.image.licenses="MIT"
 COPY --from=builder /usr/local/bin/mcp-gitea-rs /mcp-gitea-rs
+COPY --from=builder /distribution/dependencies.json /usr/share/mcp-gitea-rs/dependencies.json
+COPY LICENSE /usr/share/mcp-gitea-rs/LICENSE
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD ["/mcp-gitea-rs", "--healthcheck"]
 ENTRYPOINT ["/mcp-gitea-rs"]

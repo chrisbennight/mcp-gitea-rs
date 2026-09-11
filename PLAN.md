@@ -22,8 +22,9 @@ publication decision.
 - Exercise the Docker walkthrough with independent MCP clients; record protocol,
   schema, retained-resource, and file-upload compatibility.
 - Improve resource-lifetime visibility without inviting unsafe mutation retries.
-- Review the exact source/container contents before public visibility changes.
-- Establish supported releases, security reporting, and versioned artifacts.
+- Prepare versioned container artifacts and document the source/dependency
+  review (GitHub issue #10). Complete third-party notices and the public-release
+  ownership/security-reporting review before changing visibility.
 
 Stdio, ARM images, additional Gitea/Forgejo versions, and multi-user remote
 operation are separate future decisions. No work here requires migrating

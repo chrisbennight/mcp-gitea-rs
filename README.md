@@ -82,7 +82,7 @@ The container image is also published privately at
 `ghcr.io/chrisbennight/mcp-gitea-rs:sha-<commit>` after CI passes on main.
 Authenticate your Docker client to GHCR before pulling it. Use an immutable
 SHA tag or digest for deployment; `latest` follows successful main builds.
-See [automation and releases](docs/automation.md).
+See [automation](docs/automation.md) and [versioned container releases](docs/releases.md).
 
 Stop and remove your local container with `docker rm --force mcp-gitea-rs`.
 
