@@ -18,10 +18,9 @@ publication decision.
 ## Remaining usability work
 
 - Deliver PAT-only setup and retain optional token lifecycle and repository
-  bootstrap capabilities (tracked in GitHub issue #8).
-- Exercise the Docker walkthrough with independent MCP clients; record protocol,
-  schema, retained-resource, and file-upload compatibility.
-- Improve resource-lifetime visibility without inviting unsafe mutation retries.
+  bootstrap capabilities (GitHub issue #8, PR #11).
+- Validate Docker with independent MCP clients and document protocol, schemas,
+  resource lifetime, and file-upload compatibility (GitHub issue #9).
 - Review the exact source/container contents before public visibility changes.
 - Establish supported releases, security reporting, and versioned artifacts.
 

@@ -40,6 +40,21 @@ jobs:
             "${IMAGE}:sha-${GITHUB_SHA}" \
             "mcp-gitea-rs-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
+      - name: Check independent MCP clients
+        if: ${{ !inputs.publish }}
+        env:
+          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/mcp-python-client"
+          "$RUNNER_TEMP/mcp-python-client/bin/pip" install 'mcp==2.2.0'
+          npm install --prefix "$RUNNER_TEMP/mcp-typescript-client" --ignore-scripts \
+            --no-audit --no-fund '@modelcontextprotocol/sdk@1.30.0'
+          cp scripts/compatibility/typescript.mjs "$RUNNER_TEMP/mcp-typescript-client/"
+          "$RUNNER_TEMP/mcp-python-client/bin/python" scripts/compatibility/run.py \
+            "${IMAGE}:sha-${GITHUB_SHA}" \
+            --typescript-client "$RUNNER_TEMP/mcp-typescript-client/typescript.mjs"
+
       - name: Publish image
         if: inputs.publish
         env:
