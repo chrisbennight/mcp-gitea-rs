@@ -16,12 +16,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate release tag
+        run: python3 scripts/release_version.py
+
       - name: Build image
         env:
           IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
         run: |
           set -euo pipefail
-          docker build --platform linux/amd64 --tag "${IMAGE}:sha-${GITHUB_SHA}" .
+          docker build --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "${IMAGE}:sha-${GITHUB_SHA}" .
 
       - name: Verify image architecture
         env:
@@ -63,6 +68,7 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          release_tag=$(python3 scripts/release_version.py)
           trap 'docker logout ghcr.io >/dev/null' EXIT
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io \
             --username "$REGISTRY_USER" --password-stdin
@@ -88,4 +94,20 @@ jobs:
             fi
             docker buildx imagetools create --prefer-index=false \
               --tag "${IMAGE}:latest" "$revision"
+          fi
+          if [ -n "$release_tag" ]; then
+            release="${IMAGE}:${release_tag}"
+            if release_manifest=$(docker manifest inspect "$release" 2>&1); then
+              revision_manifest=$(docker manifest inspect "$revision")
+              if [ "$release_manifest" != "$revision_manifest" ]; then
+                echo "release tag already names different image contents" >&2
+                exit 1
+              fi
+            elif [ "$release_manifest" = "manifest unknown" ] \
+              || [ "$release_manifest" = "no such manifest: $release" ]; then
+              docker buildx imagetools create --prefer-index=false --tag "$release" "$revision"
+            else
+              printf 'failed to inspect release tag: %s\n' "$release_manifest" >&2
+              exit 1
+            fi
           fi

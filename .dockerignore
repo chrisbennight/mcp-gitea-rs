@@ -5,3 +5,10 @@ target
 .worktrees/
 .env.*
 !.env.example
+
+HANDOFF*.md
+*.pem
+*.key
+.cargo/
+.codex/
+.agents/

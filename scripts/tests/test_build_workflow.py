@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from textwrap import dedent
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 SMOKE_SCRIPT = ROOT / "scripts" / "smoke-image.sh"
 BUILD_SCRIPT = ROOT / "build-docker.sh"
+VERSION = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
 
 
 class BuildWorkflowTests(unittest.TestCase):
@@ -41,7 +43,13 @@ class BuildWorkflowTests(unittest.TestCase):
                       cat >/dev/null
                     elif [ "$1 $2" = "manifest inspect" ]; then
                       case "$MANIFEST_STATE" in
-                        exists) exit 0 ;;
+                        exists) echo '{"schemaVersion":2}'; exit 0 ;;
+                        tag_conflict)
+                          case "$3" in
+                            *:v*) echo '{"schemaVersion":1}' ;;
+                            *) echo '{"schemaVersion":2}' ;;
+                          esac
+                          exit 0 ;;
                         missing_unknown) echo "manifest unknown" >&2; exit 1 ;;
                         missing_no_such) echo "no such manifest: $3" >&2; exit 1 ;;
                         error) echo "registry unavailable" >&2; exit 1 ;;
@@ -71,7 +79,7 @@ class BuildWorkflowTests(unittest.TestCase):
                 text=True,
                 check=False,
             )
-            calls = log.read_text().splitlines()
+            calls = log.read_text().splitlines() if log.exists() else []
         return result, calls
 
     def run_smoke(self, cleanup_fails):
@@ -104,7 +112,7 @@ class BuildWorkflowTests(unittest.TestCase):
                 text=True,
                 check=False,
             )
-            calls = log.read_text().splitlines()
+            calls = log.read_text().splitlines() if log.exists() else []
         return result, calls
 
     def test_immutable_image_is_verified_and_smoked_before_publication(self):
@@ -169,7 +177,7 @@ class BuildWorkflowTests(unittest.TestCase):
     def test_publication_behavior_preserves_revision_immutability(self):
         revision = f"registry.example/owner/image:sha-{'a' * 40}"
         cases = (
-            ("exists", "refs/tags/v1.0.0", 0, [], []),
+            ("exists", f"refs/tags/v{VERSION}", 0, [], []),
             (
                 "exists",
                 "refs/heads/main",
@@ -212,6 +220,24 @@ class BuildWorkflowTests(unittest.TestCase):
                 self.assertEqual(pushes, expected_pushes)
                 self.assertEqual(aliases, expected_aliases)
 
+    def test_release_alias_is_immutable_and_does_not_advance_latest(self):
+        revision = f"registry.example/owner/image:sha-{'a' * 40}"
+        release = f"registry.example/owner/image:v{VERSION}"
+        for state in ["missing_unknown", "missing_no_such"]:
+            result, calls = self.run_step("Publish image", state, f"refs/tags/v{VERSION}")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"buildx imagetools create --prefer-index=false --tag {release} {revision}", calls)
+            self.assertFalse(any(":latest" in call for call in calls))
+        conflict, calls = self.run_step("Publish image", "tag_conflict", f"refs/tags/v{VERSION}")
+        self.assertNotEqual(conflict.returncode, 0)
+        self.assertIn("different image contents", conflict.stderr)
+        self.assertFalse(any(call.startswith("buildx imagetools create") for call in calls))
+
+    def test_invalid_release_tag_is_rejected_before_registry_access(self):
+        result, calls = self.run_step("Publish image", "missing_unknown", "refs/tags/vinvalid")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+
     def test_latest_advances_only_from_main_after_smoke(self):
         publish = self.step("Publish image")
 
@@ -242,7 +268,7 @@ class BuildWorkflowTests(unittest.TestCase):
         before_publish, publication = caller.split("  publish:\n")
         self.assertNotIn("packages: write", before_publish)
         self.assertIn("packages: write", publication)
-        self.assertIn("needs: [test, image]", publication)
+        self.assertIn("needs: [test, image, advisories]", publication)
         self.assertNotIn("pull_request_target", caller)
 
     def test_smoke_cleanup_fails_loudly(self):
