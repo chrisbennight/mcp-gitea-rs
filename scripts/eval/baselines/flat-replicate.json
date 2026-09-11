@@ -1,0 +1,444 @@
+{
+ "agent_cli": "2.1.233 (Claude Code)",
+ "cost_unaccounted_tasks": 0,
+ "cost_usd_total": 2.722762,
+ "harness_sha256": "8e401a98a847ec67fbc191e2db78b470c07fab24f51cd5de518994df2f9ab1a9",
+ "recorded_at": "2026-08-22T11:01:38Z",
+ "results": [
+  {
+   "cost_usd": 0.254527,
+   "detail": "ok",
+   "duration_ms": 15267,
+   "model": "claude-opus-5",
+   "num_turns": 7,
+   "outcome": "passed",
+   "success": true,
+   "task": "repository-lifecycle",
+   "tool_calls": 6,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__admin_create_user_repository": 1,
+    "mcp__gitea__issue_create_label": 1,
+    "mcp__gitea__repository_add_topic": 1,
+    "mcp__gitea__repository_get": 1,
+    "mcp__gitea__user_get": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 16717,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 16717,
+    "cache_read_input_tokens": 128894,
+    "inference_geo": "not_available",
+    "input_tokens": 12,
+    "iterations": [],
+    "output_tokens": 914,
+    "output_tokens_details": {
+     "thinking_tokens": 12
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 16.3,
+   "workload": "repository lifecycle"
+  },
+  {
+   "cost_usd": 0.37675700000000006,
+   "detail": "ok",
+   "duration_ms": 27192,
+   "model": "claude-opus-5",
+   "num_turns": 9,
+   "outcome": "passed",
+   "success": true,
+   "task": "change-review",
+   "tool_calls": 8,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 2,
+    "mcp__gitea__issue_create_comment": 1,
+    "mcp__gitea__repository_download_pull_diff_or_patch": 1,
+    "mcp__gitea__repository_get_pull_request": 1,
+    "mcp__gitea__repository_get_pull_request_files": 1,
+    "mcp__gitea__repository_list_pull_requests": 1,
+    "mcp__gitea__repository_merge_pull_request": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 22417,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 22417,
+    "cache_read_input_tokens": 221994,
+    "inference_geo": "not_available",
+    "input_tokens": 18,
+    "iterations": [],
+    "output_tokens": 1660,
+    "output_tokens_details": {
+     "thinking_tokens": 111
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 28.3,
+   "workload": "change review"
+  },
+  {
+   "cost_usd": 0.1993625,
+   "detail": "ok",
+   "duration_ms": 11856,
+   "model": "claude-opus-5",
+   "num_turns": 5,
+   "outcome": "passed",
+   "success": true,
+   "task": "publication",
+   "tool_calls": 4,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__repository_create_release": 1,
+    "mcp__gitea__repository_get_branch": 1,
+    "mcp__gitea__repository_list_releases": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 14336,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 14336,
+    "cache_read_input_tokens": 77775,
+    "inference_geo": "not_available",
+    "input_tokens": 8,
+    "iterations": [],
+    "output_tokens": 683,
+    "output_tokens_details": {
+     "thinking_tokens": 7
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 13.6,
+   "workload": "publication"
+  },
+  {
+   "cost_usd": 0.31447800000000004,
+   "detail": "ok",
+   "duration_ms": 36167,
+   "model": "claude-opus-5",
+   "num_turns": 10,
+   "outcome": "passed",
+   "success": true,
+   "task": "access-administration",
+   "tool_calls": 9,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 2,
+    "mcp__gitea__organization_add_team_member": 1,
+    "mcp__gitea__organization_create": 1,
+    "mcp__gitea__organization_create_team": 1,
+    "mcp__gitea__organization_edit_team": 1,
+    "mcp__gitea__organization_get_team": 1,
+    "mcp__gitea__organization_list_team_members": 1,
+    "mcp__gitea__user_get": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 17630,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 17630,
+    "cache_read_input_tokens": 182446,
+    "inference_geo": "not_available",
+    "input_tokens": 16,
+    "iterations": [],
+    "output_tokens": 1875,
+    "output_tokens_details": {
+     "thinking_tokens": 655
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 37.7,
+   "workload": "access and identity administration"
+  },
+  {
+   "cost_usd": 0.40073450000000005,
+   "detail": "ok",
+   "duration_ms": 31056,
+   "model": "claude-opus-5",
+   "num_turns": 18,
+   "outcome": "passed",
+   "success": true,
+   "task": "fleet-query",
+   "tool_calls": 17,
+   "tool_errors": 1,
+   "tool_names": {
+    "ToolSearch": 2,
+    "mcp__gitea__organization_list_repos": 1,
+    "mcp__gitea__repository_add_topic": 2,
+    "mcp__gitea__repository_list_topics": 10,
+    "mcp__gitea__user_get": 1,
+    "mcp__gitea__user_list_repos": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 23233,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 23233,
+    "cache_read_input_tokens": 219329,
+    "inference_geo": "not_available",
+    "input_tokens": 18,
+    "iterations": [],
+    "output_tokens": 2346,
+    "output_tokens_details": {
+     "thinking_tokens": 203
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 32.6,
+   "workload": "fleet queries"
+  },
+  {
+   "cost_usd": 0.279434,
+   "detail": "ok",
+   "duration_ms": 24875,
+   "model": "claude-opus-5",
+   "num_turns": 7,
+   "outcome": "passed",
+   "success": true,
+   "task": "triage",
+   "tool_calls": 6,
+   "tool_errors": 1,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__issue_create_comment": 1,
+    "mcp__gitea__issue_edit_issue": 1,
+    "mcp__gitea__issue_search_issues": 2,
+    "mcp__gitea__organization_list_repos": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 17168,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 17168,
+    "cache_read_input_tokens": 133088,
+    "inference_geo": "not_available",
+    "input_tokens": 12,
+    "iterations": [],
+    "output_tokens": 1646,
+    "output_tokens_details": {
+     "thinking_tokens": 197
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 26.6,
+   "workload": "triage"
+  },
+  {
+   "cost_usd": 0.189774,
+   "detail": "ok",
+   "duration_ms": 8857,
+   "model": "claude-opus-5",
+   "num_turns": 4,
+   "outcome": "passed",
+   "success": true,
+   "task": "content-read",
+   "tool_calls": 3,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__issue_create_issue": 1,
+    "mcp__gitea__repository_get_raw_file": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 13753,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 13753,
+    "cache_read_input_tokens": 77158,
+    "inference_geo": "not_available",
+    "input_tokens": 8,
+    "iterations": [],
+    "output_tokens": 545,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 9.9,
+   "workload": "content read"
+  },
+  {
+   "cost_usd": 0.217476,
+   "detail": "ok",
+   "duration_ms": 13558,
+   "model": "claude-opus-5",
+   "num_turns": 6,
+   "outcome": "passed",
+   "success": true,
+   "task": "issue-thread",
+   "tool_calls": 5,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__issue_add_label": 1,
+    "mcp__gitea__issue_create_comment": 1,
+    "mcp__gitea__issue_create_issue": 1,
+    "mcp__gitea__issue_create_label": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 15357,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 15357,
+    "cache_read_input_tokens": 79032,
+    "inference_geo": "not_available",
+    "input_tokens": 8,
+    "iterations": [],
+    "output_tokens": 974,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 14.5,
+   "workload": "repository lifecycle"
+  },
+  {
+   "cost_usd": 0.3115669999999999,
+   "detail": "ok",
+   "duration_ms": 18051,
+   "model": "claude-opus-5",
+   "num_turns": 7,
+   "outcome": "passed",
+   "success": true,
+   "task": "ci-operation",
+   "tool_calls": 6,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__issue_create_issue": 1,
+    "mcp__gitea__repository_actions_list_repository_workflows": 1,
+    "mcp__gitea__repository_create_repo_variable": 1,
+    "mcp__gitea__repository_edit": 1,
+    "mcp__gitea__repository_get": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 19703,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 19703,
+    "cache_read_input_tokens": 168584,
+    "inference_geo": "not_available",
+    "input_tokens": 14,
+    "iterations": [],
+    "output_tokens": 1207,
+    "output_tokens_details": {
+     "thinking_tokens": 14
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 19.1,
+   "workload": "CI operation"
+  },
+  {
+   "cost_usd": 0.17865200000000003,
+   "detail": "ok",
+   "duration_ms": 10364,
+   "model": "claude-opus-5",
+   "num_turns": 4,
+   "outcome": "passed",
+   "success": true,
+   "task": "token-lifecycle",
+   "tool_calls": 3,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__access_token_create": 1,
+    "mcp__gitea__access_token_list": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 12798,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 12798,
+    "cache_read_input_tokens": 76214,
+    "inference_geo": "not_available",
+    "input_tokens": 8,
+    "iterations": [],
+    "output_tokens": 501,
+    "output_tokens_details": {
+     "thinking_tokens": 70
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 11.4,
+   "workload": "access and identity administration"
+  }
+ ],
+ "surface": "flat",
+ "tasks_passed": 10,
+ "tasks_skipped": 0,
+ "tasks_total": 10,
+ "tool_calls_total": 67,
+ "tool_errors_total": 2,
+ "usage_total": {
+  "cache_creation_input_tokens": 173112,
+  "cache_read_input_tokens": 1364514,
+  "input_tokens": 122,
+  "output_tokens": 12351
+ }
+}

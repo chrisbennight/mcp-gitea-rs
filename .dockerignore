@@ -1,0 +1,7 @@
+target
+.git
+.env
+
+.worktrees/
+.env.*
+!.env.example

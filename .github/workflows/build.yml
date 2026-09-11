@@ -1,0 +1,76 @@
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        env:
+          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
+        run: |
+          set -euo pipefail
+          docker build --platform linux/amd64 --tag "${IMAGE}:sha-${GITHUB_SHA}" .
+
+      - name: Verify image architecture
+        env:
+          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
+        run: |
+          set -euo pipefail
+          architecture="$(docker image inspect --format '{{.Architecture}}' "${IMAGE}:sha-${GITHUB_SHA}")"
+          test "$architecture" = amd64
+
+      - name: Smoke health endpoint
+        env:
+          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
+        run: |
+          set -euo pipefail
+          scripts/smoke-image.sh \
+            "${IMAGE}:sha-${GITHUB_SHA}" \
+            "mcp-gitea-rs-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Publish image
+        if: inputs.publish
+        env:
+          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          trap 'docker logout ghcr.io >/dev/null' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io \
+            --username "$REGISTRY_USER" --password-stdin
+          revision="${IMAGE}:sha-${GITHUB_SHA}"
+          revision_created=0
+          if inspection=$(docker manifest inspect "$revision" 2>&1); then
+            echo "immutable revision already exists; refusing to rebind it"
+          elif [ "$inspection" = "manifest unknown" ] \
+            || [ "$inspection" = "no such manifest: $revision" ]; then
+            docker push "$revision"
+            revision_created=1
+          else
+            printf 'failed to determine whether immutable revision exists: %s\n' \
+              "$inspection" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF" = refs/heads/main ]; then
+            if [ "$revision_created" = 0 ]; then
+              docker pull "$revision"
+              scripts/smoke-image.sh \
+                "$revision" \
+                "mcp-gitea-rs-remote-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            fi
+            docker buildx imagetools create --prefer-index=false \
+              --tag "${IMAGE}:latest" "$revision"
+          fi

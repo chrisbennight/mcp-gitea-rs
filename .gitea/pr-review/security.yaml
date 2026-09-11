@@ -1,0 +1,7 @@
+blocked_paths: []
+notes:
+  - "The server is a typed interface; arbitrary HTTP, shell, and tea execution are excluded."
+  - "Caller input cannot select or provide upstream credentials."
+  - "Credentials and newly created token values must never appear in logs, errors, fixtures, or ordinary metadata."
+  - "Mutations validate before the call and are not retried after ambiguous transport outcomes."
+  - "Every mutation requires accurate side-effect and risk classification."

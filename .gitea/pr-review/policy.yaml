@@ -1,0 +1,55 @@
+enabled: true
+repo: chrisbennight/mcp-gitea-rs
+base_branches: [main]
+renovate_mode: eval
+status_context: pr-review/gate
+intent_sources:
+  include_pr_body: true
+  include_pr_comments: true
+  include_referenced_files: true
+intent_requirements:
+  require_design_goal: true
+  require_acceptance_criteria: true
+  minimum_sections_present: 2
+review:
+  llm_required: true
+  # Sized to the generated catalog, not to hand-written code. generated/** is a
+  # single ~900KB file carrying every risk lane, secret-result flag, auth lane,
+  # and input schema, and it is listed below as a sensitive path precisely
+  # because those classifications are what review most needs to see. Any change
+  # to the generator rewrites it at hundreds of scattered sites, so the diff is
+  # dominated by unified-diff context rather than by edited content: stripping
+  # two Go vendor extensions produces 187K chars of diff for roughly 70 lines of
+  # hand-written change.
+  #
+  # At a catalog-blind budget every such change is bounced unreviewed, which is
+  # the opposite of the intent — the most security-relevant file in the tree
+  # would be the one the reviewer never reads. This value fits a full
+  # regeneration with headroom for a Gitea version bump, and remains half of
+  # the reviewer's own shipped default, so it tightens rather than relaxes the
+  # stock envelope.
+  max_diff_chars: 250000
+  max_comment_chars: 16000
+  agent_enabled: true
+  agent_max_steps: 15
+sensitive_paths:
+  - openapi/**
+  - generated/**
+  - scripts/generate_api.py
+  - crates/gitea-api/**
+  - crates/gitea-mcp/**
+  - crates/gitea-server/**
+  - Dockerfile
+  - .github/workflows/**
+  - .gitea/pr-review/**
+impact_map:
+  openapi/**: "Pinned upstream API contract that determines generated coverage"
+  generated/**: "Model-visible operation catalog, schemas, and risk classifications"
+  scripts/generate_api.py: "Deterministic API naming, compatibility, schemas, and security metadata"
+  crates/gitea-api/**: "Upstream credentials, request construction, bounds, and response normalization"
+  crates/gitea-mcp/**: "Model-visible schemas, dispatch, workflows, and gateway classification"
+  crates/gitea-server/**: "Private bearer, configuration, and Streamable HTTP boundary"
+  Dockerfile: "Published non-root image and build supply chain"
+  .github/workflows/**: "CI and image publication"
+security_policy: security.yaml
+timeout_seconds: 120

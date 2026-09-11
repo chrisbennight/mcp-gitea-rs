@@ -1,0 +1,35 @@
+[package]
+publish = false
+name = "gitea-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+base64.workspace = true
+gitea-api.workspace = true
+getrandom.workspace = true
+jsonschema.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+url.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+reqwest.workspace = true
+# The client role and the in-memory transport exist so that tests can drive the
+# protocol entry points through a real session instead of calling the inherent
+# helpers those entry points delegate to. Neither reaches the served binary:
+# dev-dependency features are not unified into a normal build.
+rmcp = { workspace = true, features = ["client", "transport-async-rw"] }
+tokio.workspace = true
+
+[lints]
+workspace = true

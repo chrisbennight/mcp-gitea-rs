@@ -1,0 +1,442 @@
+{
+ "agent_cli": "2.1.233 (Claude Code)",
+ "cost_unaccounted_tasks": 0,
+ "cost_usd_total": 2.59878,
+ "harness_sha256": "8e401a98a847ec67fbc191e2db78b470c07fab24f51cd5de518994df2f9ab1a9",
+ "recorded_at": "2026-08-22T10:56:10Z",
+ "results": [
+  {
+   "cost_usd": 0.4693604999999999,
+   "detail": "ok",
+   "duration_ms": 42292,
+   "model": "claude-opus-5",
+   "num_turns": 16,
+   "outcome": "passed",
+   "success": true,
+   "task": "repository-lifecycle",
+   "tool_calls": 15,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__api_admin": 1,
+    "mcp__gitea__api_mutate": 2,
+    "mcp__gitea__api_read": 4,
+    "mcp__gitea__catalog_describe": 4,
+    "mcp__gitea__catalog_search": 3
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 30582,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 30582,
+    "cache_read_input_tokens": 184101,
+    "inference_geo": "not_available",
+    "input_tokens": 18,
+    "iterations": [],
+    "output_tokens": 2856,
+    "output_tokens_details": {
+     "thinking_tokens": 995
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 43.0,
+   "workload": "repository lifecycle"
+  },
+  {
+   "cost_usd": 0.2788795,
+   "detail": "ok",
+   "duration_ms": 29189,
+   "model": "claude-opus-5",
+   "num_turns": 11,
+   "outcome": "passed",
+   "success": true,
+   "task": "change-review",
+   "tool_calls": 10,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 2,
+    "mcp__gitea__api_destroy": 1,
+    "mcp__gitea__api_mutate": 1,
+    "mcp__gitea__api_read": 3,
+    "mcp__gitea__catalog_describe": 2,
+    "mcp__gitea__catalog_search": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 13421,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 13421,
+    "cache_read_input_tokens": 206819,
+    "inference_geo": "not_available",
+    "input_tokens": 22,
+    "iterations": [],
+    "output_tokens": 1646,
+    "output_tokens_details": {
+     "thinking_tokens": 109
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 29.9,
+   "workload": "change review"
+  },
+  {
+   "cost_usd": 0.1542135,
+   "detail": "ok",
+   "duration_ms": 14490,
+   "model": "claude-opus-5",
+   "num_turns": 7,
+   "outcome": "passed",
+   "success": true,
+   "task": "publication",
+   "tool_calls": 6,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__api_mutate": 1,
+    "mcp__gitea__api_read": 2,
+    "mcp__gitea__catalog_describe": 1,
+    "mcp__gitea__catalog_search": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 8651,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 8651,
+    "cache_read_input_tokens": 86937,
+    "inference_geo": "not_available",
+    "input_tokens": 12,
+    "iterations": [],
+    "output_tokens": 967,
+    "output_tokens_details": {
+     "thinking_tokens": 45
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 15.2,
+   "workload": "publication"
+  },
+  {
+   "cost_usd": 0.227906,
+   "detail": "ok",
+   "duration_ms": 25911,
+   "model": "claude-opus-5",
+   "num_turns": 12,
+   "outcome": "passed",
+   "success": true,
+   "task": "access-administration",
+   "tool_calls": 11,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__api_mutate": 3,
+    "mcp__gitea__api_read": 2,
+    "mcp__gitea__catalog_describe": 3,
+    "mcp__gitea__catalog_search": 2
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 11408,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 11408,
+    "cache_read_input_tokens": 133792,
+    "inference_geo": "not_available",
+    "input_tokens": 16,
+    "iterations": [],
+    "output_tokens": 1874,
+    "output_tokens_details": {
+     "thinking_tokens": 250
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 26.6,
+   "workload": "access and identity administration"
+  },
+  {
+   "cost_usd": 0.37704800000000005,
+   "detail": "ok",
+   "duration_ms": 39282,
+   "model": "claude-opus-5",
+   "num_turns": 24,
+   "outcome": "passed",
+   "success": true,
+   "task": "fleet-query",
+   "tool_calls": 23,
+   "tool_errors": 1,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__api_mutate": 2,
+    "mcp__gitea__api_read": 14,
+    "mcp__gitea__catalog_describe": 2,
+    "mcp__gitea__catalog_search": 4
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 19175,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 19175,
+    "cache_read_input_tokens": 208426,
+    "inference_geo": "not_available",
+    "input_tokens": 22,
+    "iterations": [],
+    "output_tokens": 3239,
+    "output_tokens_details": {
+     "thinking_tokens": 247
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 40.0,
+   "workload": "fleet queries"
+  },
+  {
+   "cost_usd": 0.2593105,
+   "detail": "ok",
+   "duration_ms": 28737,
+   "model": "claude-opus-5",
+   "num_turns": 13,
+   "outcome": "passed",
+   "success": true,
+   "task": "triage",
+   "tool_calls": 12,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 2,
+    "mcp__gitea__api_destroy": 1,
+    "mcp__gitea__api_mutate": 1,
+    "mcp__gitea__api_read": 2,
+    "mcp__gitea__catalog_describe": 3,
+    "mcp__gitea__catalog_search": 3
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 12650,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 12650,
+    "cache_read_input_tokens": 173421,
+    "inference_geo": "not_available",
+    "input_tokens": 20,
+    "iterations": [],
+    "output_tokens": 1840,
+    "output_tokens_details": {
+     "thinking_tokens": 160
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 29.5,
+   "workload": "triage"
+  },
+  {
+   "cost_usd": 0.1544155,
+   "detail": "ok",
+   "duration_ms": 14266,
+   "model": "claude-opus-5",
+   "num_turns": 8,
+   "outcome": "passed",
+   "success": true,
+   "task": "content-read",
+   "tool_calls": 7,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__api_mutate": 1,
+    "mcp__gitea__api_read": 1,
+    "mcp__gitea__catalog_describe": 2,
+    "mcp__gitea__catalog_search": 2
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 8578,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 8578,
+    "cache_read_input_tokens": 87551,
+    "inference_geo": "not_available",
+    "input_tokens": 12,
+    "iterations": [],
+    "output_tokens": 992,
+    "output_tokens_details": {
+     "thinking_tokens": 129
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 15.0,
+   "workload": "content read"
+  },
+  {
+   "cost_usd": 0.2084245,
+   "detail": "ok",
+   "duration_ms": 22221,
+   "model": "claude-opus-5",
+   "num_turns": 12,
+   "outcome": "passed",
+   "success": true,
+   "task": "issue-thread",
+   "tool_calls": 11,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__api_mutate": 4,
+    "mcp__gitea__catalog_describe": 4,
+    "mcp__gitea__catalog_search": 2
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 11298,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 11298,
+    "cache_read_input_tokens": 111599,
+    "inference_geo": "not_available",
+    "input_tokens": 14,
+    "iterations": [],
+    "output_tokens": 1583,
+    "output_tokens_details": {
+     "thinking_tokens": 150
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 22.9,
+   "workload": "repository lifecycle"
+  },
+  {
+   "cost_usd": 0.3855605000000001,
+   "detail": "ok",
+   "duration_ms": 34437,
+   "model": "claude-opus-5",
+   "num_turns": 17,
+   "outcome": "passed",
+   "success": true,
+   "task": "ci-operation",
+   "tool_calls": 16,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 2,
+    "mcp__gitea__api_destroy": 1,
+    "mcp__gitea__api_mutate": 2,
+    "mcp__gitea__api_read": 4,
+    "mcp__gitea__catalog_describe": 3,
+    "mcp__gitea__catalog_search": 4
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 19359,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 19359,
+    "cache_read_input_tokens": 260501,
+    "inference_geo": "not_available",
+    "input_tokens": 24,
+    "iterations": [],
+    "output_tokens": 2464,
+    "output_tokens_details": {
+     "thinking_tokens": 272
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 35.1,
+   "workload": "CI operation"
+  },
+  {
+   "cost_usd": 0.0836615,
+   "detail": "ok",
+   "duration_ms": 9275,
+   "model": "claude-opus-5",
+   "num_turns": 4,
+   "outcome": "passed",
+   "success": true,
+   "task": "token-lifecycle",
+   "tool_calls": 3,
+   "tool_errors": 0,
+   "tool_names": {
+    "ToolSearch": 1,
+    "mcp__gitea__access_token_create": 1,
+    "mcp__gitea__access_token_list": 1
+   },
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 4469,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 4469,
+    "cache_read_input_tokens": 50963,
+    "inference_geo": "not_available",
+    "input_tokens": 8,
+    "iterations": [],
+    "output_tokens": 538,
+    "output_tokens_details": {
+     "thinking_tokens": 89
+    },
+    "server_tool_use": {
+     "web_fetch_requests": 0,
+     "web_search_requests": 0
+    },
+    "service_tier": "standard",
+    "speed": "standard"
+   },
+   "wall_seconds": 10.0,
+   "workload": "access and identity administration"
+  }
+ ],
+ "surface": "layered",
+ "tasks_passed": 10,
+ "tasks_skipped": 0,
+ "tasks_total": 10,
+ "tool_calls_total": 114,
+ "tool_errors_total": 1,
+ "usage_total": {
+  "cache_creation_input_tokens": 139591,
+  "cache_read_input_tokens": 1504110,
+  "input_tokens": 168,
+  "output_tokens": 17999
+ }
+}

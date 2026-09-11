@@ -1,0 +1,10 @@
+/target
+.env
+*.pem
+*.key
+__pycache__/
+*.pyc
+
+.worktrees/
+.env.*
+!.env.example
