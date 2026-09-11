@@ -138,7 +138,7 @@ impl Default for LargeContentPolicy {
 #[derive(Clone)]
 pub struct GiteaMcp {
     client: Arc<GiteaClient>,
-    token_client: Arc<TokenLifecycleClient>,
+    token_client: Option<Arc<TokenLifecycleClient>>,
     policy: LargeContentPolicy,
     /// Shared by every session so that total retained bytes are bounded by the
     /// configured aggregate rather than by that aggregate times the number of
@@ -150,7 +150,10 @@ pub struct GiteaMcp {
 
 impl GiteaMcp {
     #[must_use]
-    pub fn new(client: Arc<GiteaClient>, token_client: Arc<TokenLifecycleClient>) -> Self {
+    pub fn new(
+        client: Arc<GiteaClient>,
+        token_client: impl Into<Option<Arc<TokenLifecycleClient>>>,
+    ) -> Self {
         Self::with_large_content_policy(client, token_client, LargeContentPolicy::default())
     }
 
@@ -166,7 +169,7 @@ impl GiteaMcp {
     pub fn new_session(&self) -> Self {
         Self {
             client: Arc::clone(&self.client),
-            token_client: Arc::clone(&self.token_client),
+            token_client: self.token_client.clone(),
             policy: self.policy,
             budget: Arc::clone(&self.budget),
             store: resources::ResourceStore::with_budget(
@@ -180,7 +183,7 @@ impl GiteaMcp {
     #[must_use]
     pub fn with_large_content_policy(
         client: Arc<GiteaClient>,
-        token_client: Arc<TokenLifecycleClient>,
+        token_client: impl Into<Option<Arc<TokenLifecycleClient>>>,
         policy: LargeContentPolicy,
     ) -> Self {
         // A ceiling below the floor cannot be honoured, so it is raised here
@@ -196,7 +199,7 @@ impl GiteaMcp {
         ));
         Self {
             client,
-            token_client,
+            token_client: token_client.into(),
             policy,
             store: resources::ResourceStore::with_budget(policy.limits, Arc::clone(&budget)),
             budget,
@@ -512,7 +515,7 @@ impl GiteaMcp {
         if params.name == ACCESS_TOKEN_CREATE_TOOL {
             let arguments = parse_arguments::<CreateTokenArguments>(params.arguments)?;
             let token = match self
-                .token_client
+                .token_client()?
                 .create(&CreateAccessToken {
                     name: arguments.name,
                     scopes: arguments.scopes,
@@ -529,7 +532,7 @@ impl GiteaMcp {
         if params.name == ACCESS_TOKEN_LIST_TOOL {
             let arguments = parse_arguments::<ListTokenArguments>(params.arguments)?;
             let tokens = match self
-                .token_client
+                .token_client()?
                 .list(arguments.page, arguments.limit)
                 .await
             {
@@ -542,7 +545,7 @@ impl GiteaMcp {
             RevokeTokenArguments::reject_null_selectors(params.arguments.as_ref())?;
             let arguments = parse_arguments::<RevokeTokenArguments>(params.arguments)?;
             let selector = arguments.into_selector()?;
-            if let Err(error) = self.token_client.revoke(&selector).await {
+            if let Err(error) = self.token_client()?.revoke(&selector).await {
                 return upstream_failure(&error);
             }
             return self.bound_value(ACCESS_TOKEN_REVOKE_TOOL, &json!({ "revoked": true }), false);
@@ -583,6 +586,13 @@ impl GiteaMcp {
         >())
     }
 
+    fn token_client(&self) -> Result<&TokenLifecycleClient, McpError> {
+        self.token_client.as_deref().ok_or_else(|| McpError::internal_error(
+            "Token administration is unavailable: configure GITEA_MCP_TOKEN_USERNAME and GITEA_MCP_TOKEN_PASSWORD; no upstream request was sent",
+            None,
+        ))
+    }
+
     async fn bootstrap_result(
         &self,
         raw_arguments: Option<Map<String, Value>>,
@@ -594,7 +604,11 @@ impl GiteaMcp {
             .map_err(|message| McpError::invalid_params(message, None))?;
         bootstrap::validate(&arguments)
             .map_err(|message| McpError::invalid_params(message, None))?;
-        let result = bootstrap::execute(&self.client, &self.token_client, arguments).await;
+        if arguments.requires_token_administration() {
+            self.token_client()?;
+        }
+        let result =
+            bootstrap::execute(&self.client, self.token_client.as_deref(), arguments).await;
         let is_error = !result.is_complete();
         let result = serde_json::to_value(result).map_err(|_| {
             McpError::internal_error("failed to encode repository bootstrap result", None)
@@ -2775,6 +2789,63 @@ mod tests {
             Some(&Value::Bool(true))
         );
         upstream.await.expect("upstream task");
+    }
+
+    #[tokio::test]
+    async fn pat_only_sessions_refuse_token_work_before_any_upstream_request() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let client = Arc::new(
+            GiteaClient::new(
+                &format!("http://{}", listener.local_addr().expect("address")),
+                "test-token",
+                Duration::from_secs(1),
+            )
+            .expect("client"),
+        );
+        let mcp = GiteaMcp::new(client, None).new_session();
+        for (name, arguments) in [
+            (
+                ACCESS_TOKEN_CREATE_TOOL,
+                json!({"name":"agent","scopes":["read:user"]}),
+            ),
+            (ACCESS_TOKEN_LIST_TOOL, json!({})),
+            (ACCESS_TOKEN_REVOKE_TOOL, json!({"id":7})),
+            (
+                bootstrap::TOOL_NAME,
+                json!({"owner":"operator", "owner_kind":"current_user",
+                "repository":{"name":"demo"}, "access_token":{"name":"agent","scopes":["read:user"]}}),
+            ),
+        ] {
+            let error = mcp
+                .invoke_tool(
+                    CallToolRequestParams::new(name)
+                        .with_arguments(arguments.as_object().expect("object").clone()),
+                )
+                .await
+                .expect_err("token administration requires configuration");
+            assert!(
+                error.message.contains("GITEA_MCP_TOKEN_USERNAME"),
+                "{error}"
+            );
+            assert!(
+                error.message.contains("no upstream request was sent"),
+                "{error}"
+            );
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), listener.accept())
+                .await
+                .is_err()
+        );
+        let discovery = mcp
+            .invoke_tool(
+                CallToolRequestParams::new(discovery::SEARCH_TOOL).with_arguments(Map::new()),
+            )
+            .await
+            .expect("discovery without token credentials");
+        assert_ne!(discovery.is_error, Some(true));
     }
 
     #[tokio::test]

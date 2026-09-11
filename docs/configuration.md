@@ -8,8 +8,8 @@ provider. No particular secret manager or gateway is required.
 | --- | --- |
 | `GITEA_MCP_UPSTREAM_URL` | Required Gitea installation URL, before `/api/v1`; no default |
 | `GITEA_MCP_SERVICE_TOKEN` | Required Gitea PAT for ordinary operations |
-| `GITEA_MCP_TOKEN_USERNAME` | Required token-administration account |
-| `GITEA_MCP_TOKEN_PASSWORD` | Required password for that account |
+| `GITEA_MCP_TOKEN_USERNAME` | Optional token-administration account; configure together with password |
+| `GITEA_MCP_TOKEN_PASSWORD` | Optional password; configure together with username |
 | `GITEA_MCP_GATEWAY_BEARER_CURRENT` | Required ingress bearer, at least 32 bytes |
 | `GITEA_MCP_GATEWAY_BEARER_PREVIOUS` | Optional previous bearer during rotation |
 | `GITEA_MCP_HOST` | Bind address, default `0.0.0.0` inside the container |
@@ -37,6 +37,14 @@ only for intended tasks. Token lifecycle manages the configured account's PATs;
 callers cannot select another account or supply upstream credentials. Revocation
 accepts exactly one numeric ID or unambiguous name. Token names cannot be
 numeric selectors, including signed forms.
+
+Omit both token-administration variables for PAT-only use. Empty values also
+count as omitted; configuring only one is a startup error. Token tools remain
+visible, but calls fail with configuration guidance when credentials are absent.
+A bootstrap request that includes `access_token` is refused before any upstream
+request, so missing credentials cannot leave a partially created repository.
+Configured credentials are validated at startup; malformed credentials are not
+silently treated as an unavailable optional feature.
 
 File upload requires `files/authorizeUpload`, the `x-mcp-file` argument extension,
 and the returned upload URL/header contract. The value stays in bounded process

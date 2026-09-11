@@ -56,12 +56,19 @@ async fn run(cli: Cli, settings: Settings) -> anyhow::Result<()> {
         &settings.service_token,
         settings.timeout,
     )?);
-    let token_client = Arc::new(TokenLifecycleClient::new(
-        &settings.upstream_url,
-        &settings.token_username,
-        &settings.token_password,
-        settings.timeout,
-    )?);
+    let token_client = settings
+        .token_credentials
+        .as_ref()
+        .map(|credentials| {
+            TokenLifecycleClient::new(
+                &settings.upstream_url,
+                &credentials.username,
+                &credentials.password,
+                settings.timeout,
+            )
+            .map(Arc::new)
+        })
+        .transpose()?;
     let files = settings
         .file_public_origin
         .as_deref()

@@ -17,8 +17,8 @@ publication decision.
 
 ## Remaining usability work
 
-- Make token-administration credentials optional for PAT-only use while retaining
-  token lifecycle and repository bootstrap capabilities.
+- Deliver PAT-only setup and retain optional token lifecycle and repository
+  bootstrap capabilities (tracked in GitHub issue #8).
 - Exercise the Docker walkthrough with independent MCP clients; record protocol,
   schema, retained-resource, and file-upload compatibility.
 - Improve resource-lifetime visibility without inviting unsafe mutation retries.

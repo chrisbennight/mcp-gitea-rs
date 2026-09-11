@@ -77,7 +77,7 @@ impl Drop for ZeroizingUploadBody {
 pub fn router(
     settings: &Settings,
     client: Arc<GiteaClient>,
-    token_client: Arc<TokenLifecycleClient>,
+    token_client: impl Into<Option<Arc<TokenLifecycleClient>>>,
     files: Option<Arc<FilePlane>>,
     cancellation: &CancellationToken,
 ) -> Router {
@@ -250,8 +250,7 @@ mod tests {
         Settings {
             upstream_url: "https://gitea.example.test".to_string(),
             service_token: "test-service-token".to_string(),
-            token_username: "token-user".to_string(),
-            token_password: "token-password".to_string(),
+            token_credentials: None,
             gateway_bearer_current: "0123456789abcdef0123456789abcdef".to_string(),
             gateway_bearer_previous: previous.map(str::to_string),
             host: "127.0.0.1".to_string(),
@@ -277,8 +276,8 @@ mod tests {
         let token_client = Arc::new(
             TokenLifecycleClient::new(
                 &settings.upstream_url,
-                &settings.token_username,
-                &settings.token_password,
+                "token-user",
+                "token-password",
                 settings.timeout,
             )
             .expect("token client"),
@@ -304,8 +303,8 @@ mod tests {
         let token_client = Arc::new(
             TokenLifecycleClient::new(
                 &settings.upstream_url,
-                &settings.token_username,
-                &settings.token_password,
+                "token-user",
+                "token-password",
                 settings.timeout,
             )
             .expect("token client"),
