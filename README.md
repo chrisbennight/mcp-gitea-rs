@@ -47,9 +47,8 @@ the typed interface, subject to the configured account's permissions.
 
 ## Run with Docker
 
-This repository and its container package are private during release
-preparation; you need repository access to clone it. The validated container
-platform is Linux amd64 and the pinned upstream is Gitea 1.26.4.
+The source repository is public. The validated container platform is Linux
+amd64 and the pinned upstream is Gitea 1.26.4.
 
 You need Docker, Python 3 for the bearer-generation step below, a reachable
 Gitea instance, a service PAT, and an MCP client supporting Streamable HTTP,
@@ -58,7 +57,7 @@ The first build downloads public dependencies and can take several minutes.
 
 ### Build and configure
 
-Clone using your authenticated Git setup:
+Clone and build from source:
 
 ```sh
 git clone https://github.com/chrisbennight/mcp-gitea-rs.git

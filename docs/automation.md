@@ -9,8 +9,8 @@ Only a push to main or a `v*` tag in `chrisbennight/mcp-gitea-rs` can publish. T
 job has `packages: write`; tests and PR image jobs have only `contents: read`.
 The workflow uses `GITHUB_TOKEN`, not a stored registry PAT or private action.
 Images carry the repository source label so GHCR can associate their access.
-The repository and new GHCR package are private during preparation. Do not
-change visibility as part of a build or release.
+The source repository is public. GHCR package access is administered separately;
+a build or release does not change package visibility.
 
 A successful main build publishes `sha-<full commit>` and advances `latest`.
 A stable `vMAJOR.MINOR.PATCH` tag matching the workspace version publishes its
@@ -27,7 +27,7 @@ compiler pins in the toolchain, manifest, image, and test workflow must be
 updated together. Review upstream specification changes separately from routine
 dependency updates. Enable GitHub vulnerability alerts and security updates in
 repository settings; a committed configuration does not establish those account
-settings or guarantee private-repository security features are available.
+settings.
 
 The dependency-advisory workflow checks locked public Cargo packages against
 OSV on each CI run and weekly. Publication waits for that check as well as the
