@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="240" viewBox="0 0 960 240" role="img" aria-labelledby="title">
+<title id="title">mcp-gitea-rs: Connect your AI tools to Gitea</title>
+<rect width="960" height="240" fill="#FBF3E6"/>
+
+<text x="40" y="112" fill="#302820" font-family="Verdana,DejaVu Sans,sans-serif" font-size="58" font-weight="700">mcp-gitea-rs</text>
+<text x="43" y="162" fill="#302820" font-family="Verdana,DejaVu Sans,sans-serif" font-size="25">Connect your AI tools to Gitea</text>
+<g transform="translate(736 48) scale(1.35)"><g fill="none" stroke="#626B40" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M46 50V30m0 20 27-23V15"/>
+  <circle cx="46" cy="23" r="7"/><circle cx="73" cy="8" r="7"/>
+</g>
+<g fill="#B96443">
+  <path d="M20 58H88C88 79 80 91 69 99H39C27 90 20 77 20 58Z"/>
+  <rect x="29" y="105" width="52" height="6" rx="3"/>
+</g>
+<g fill="none" stroke="#B96443" stroke-width="7" stroke-linecap="round">
+  <path d="M85 88Q108 88 110 72"/><circle cx="111" cy="64" r="7"/>
+</g></g>
+</svg>

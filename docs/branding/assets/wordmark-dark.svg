@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="128" viewBox="0 0 600 128" role="img" aria-labelledby="title">
+<title id="title">mcp-gitea-rs</title>
+<rect width="600" height="128" fill="#302820"/>
+
+<g transform="translate(8 8) scale(.9)"><g fill="none" stroke="#B3BB86" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M46 50V30m0 20 27-23V15"/>
+  <circle cx="46" cy="23" r="7"/><circle cx="73" cy="8" r="7"/>
+</g>
+<g fill="#DB906D">
+  <path d="M20 58H88C88 79 80 91 69 99H39C27 90 20 77 20 58Z"/>
+  <rect x="29" y="105" width="52" height="6" rx="3"/>
+</g>
+<g fill="none" stroke="#DB906D" stroke-width="7" stroke-linecap="round">
+  <path d="M85 88Q108 88 110 72"/><circle cx="111" cy="64" r="7"/>
+</g></g>
+<text x="141" y="79" fill="#FBF3E6" font-family="Verdana,DejaVu Sans,sans-serif" font-size="43" font-weight="700">mcp-gitea-rs</text>
+</svg>

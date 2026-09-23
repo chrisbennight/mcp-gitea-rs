@@ -22,6 +22,12 @@ publication decision.
 
 ## Remaining administration and public-release review
 
+The selected tea identity and [documentation writing guide](docs/writing.md)
+now support the README's task descriptions and Docker setup. The service's
+connection direction is explicit: MCP clients use this server to call Gitea.
+The [visual guide](docs/branding/README.md) records the concept and maintained
+assets; repository and package visibility remain unchanged.
+
 - Configure main-branch protection and native Dependabot security alerts/updates
   in GitHub. The source workflows do not establish those owner settings.
 - Complete third-party notices before public distribution (issue #12). The

@@ -5,6 +5,11 @@ Describe the task you need to accomplish before proposing a large redesign.
 Keep reports and examples free of credentials and private repository content.
 Use [SECURITY.md](SECURITY.md) for vulnerabilities.
 
+For documentation and artwork changes, follow the [writing guide](docs/writing.md)
+and [visual identity](docs/branding/README.md). Regenerate branding assets with
+`python3 docs/branding/export.py` and verify them with
+`python3 docs/branding/export.py --check` before submitting changes to that source.
+
 Install the Rust toolchain in `rust-toolchain.toml`, Python 3, and Docker.
 Native compilation also needs a C/C++ toolchain and CMake. Create an isolated
 worktree under the ignored `.worktrees/` directory and make a task branch.
