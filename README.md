@@ -1,40 +1,78 @@
 # mcp-gitea-rs
 
-A Rust MCP server for managing Gitea repositories, issues, pull requests,
-Actions, organizations, and access tokens. It provides typed operations from
-the pinned Gitea API specification, plus repository bootstrap and governed
-secret-upload workflows.
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/branding/assets/wordmark-dark.svg">
+  <source media="(max-width: 600px)" srcset="docs/branding/assets/wordmark-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/branding/assets/header-dark.svg">
+  <img src="docs/branding/assets/header-light.svg" width="960" alt="mcp-gitea-rs — Connect your AI tools to Gitea">
+</picture>
 
-This is a single-operator service. Run it locally or on a private network, with
-one Gitea service account. Every MCP client holding the ingress bearer can use
-that account's configured capabilities. A gateway can add caller authorization,
-approval, and audit; the server does not provide separate user identities.
+**Connect your AI tools to Gitea.** Read issues, inspect pull requests, check
+Actions, and manage repositories through your MCP client.
 
-The GitHub repository and its container package are private during migration.
-The supported container platform is Linux amd64; the pinned upstream is Gitea
-1.26.4. Other versions and platforms are not yet validated.
+mcp-gitea-rs is a Rust service that connects an AI client to Gitea's API. It
+exposes an MCP server and acts as a Gitea API client. MCP (Model Context Protocol)
+lets an AI application discover and call these operations as tools. The service
+provides typed operations from the pinned Gitea specification, plus repository
+setup and access-token workflows.
+
+**[Run with Docker](#run-with-docker)** ·
+**[Explore the documentation](docs/README.md)** ·
+**[Contribute](CONTRIBUTING.md)** ·
+**[Get help](#help-and-contributions)**
+
+## Things to try
+
+**Inspect work in a repository.** Ask your client to find open issues, read a
+pull request, or inspect a branch. It can discover the operation and its typed
+inputs without constructing REST paths or shell commands.
+
+**Check an Actions run.** Inspect workflow runs, jobs, and logs through the
+catalog. Large results can be returned as temporary resource links; the client
+must retrieve them in the same session. See [result handling](docs/clients.md#temporary-results).
+
+**Set up a repository.** Use `repository.bootstrap` to create or adopt a
+repository and apply its settings. Optional access-token creation needs
+separate credentials. Partial failures report completed steps and recovery
+options; bootstrap is not a transaction.
+
+**Manage the configured account's access tokens.** Create, list, or revoke
+personal access tokens (PATs) with the optional token-administration account.
+Token values are sensitive and
+returned once. See [configuration](docs/configuration.md) before enabling this.
+
+The [operation reference](docs/operations.md) explains discovery and execution.
+Every operation in the pinned Gitea specification remains reachable through
+the typed interface, subject to the configured account's permissions.
 
 ## Run with Docker
 
-You need Docker, a reachable Gitea instance, a service personal access token
-(PAT), and an ingress bearer. Token-administration credentials are optional;
-ordinary operations and repository bootstrap without token creation need only
-the service PAT. To manage access tokens, configure a dedicated account that
-supports password-based API authentication. Do not weaken a human account's
-authentication to enable this optional capability.
+The source repository is public. The validated container platform is Linux
+amd64 and the pinned upstream is Gitea 1.26.4.
 
-Build from your authenticated checkout:
+You need Docker, Python 3 for the bearer-generation step below, a reachable
+Gitea instance, a service PAT, and an MCP client supporting Streamable HTTP,
+custom Authorization headers, and MCP sessions. See [tested clients](docs/clients.md).
+The first build downloads public dependencies and can take several minutes.
+
+### Build and configure
+
+Clone and build from source:
 
 ```sh
+git clone https://github.com/chrisbennight/mcp-gitea-rs.git
+cd mcp-gitea-rs
 ./build-docker.sh
 cp .env.example .env
 chmod 600 .env
 ```
 
-Edit `.env` locally. Set your Gitea URL, service token, and a random ingress
-bearer of at least 32 bytes. Keep this
-file out of commits and conversations. To replace the bearer placeholder with
-an independently generated value without displaying it:
+Edit `.env` locally. Set `GITEA_MCP_UPSTREAM_URL` to your Gitea installation URL
+without `/api/v1`, and `GITEA_MCP_SERVICE_TOKEN` to a PAT with the permissions
+you intend to use. Start with read access. The Gitea URL must be reachable from
+inside the container; `localhost` there means the container itself.
+
+Generate a separate, random ingress bearer without displaying it:
 
 ```sh
 python3 - <<'PY'
@@ -49,7 +87,12 @@ path.write_text(text.replace(placeholder, secrets.token_hex(32)))
 PY
 ```
 
-Start the container with a host-loopback port:
+Keep `.env` out of commits and conversations. The ingress bearer protects the
+MCP connection; it is not the Gitea PAT. Leave token-administration credentials
+unset for ordinary operations and bootstrap without token creation. The
+[configuration guide](docs/configuration.md) explains the optional account.
+
+### Start the service
 
 ```sh
 docker run --detach --name mcp-gitea-rs \
@@ -60,68 +103,89 @@ docker run --detach --name mcp-gitea-rs \
 curl --fail http://127.0.0.1:8000/healthz
 ```
 
-Health reports that the process is running; it does not validate the Gitea
-credentials. The upstream URL is required and must be reachable from inside the
-container. `localhost` inside it refers to the container itself.
+Expect HTTP 200 and a JSON object whose `status` is `ok`, with a `tool_count`
+field. This confirms the process is running; it does not validate Gitea access.
+The published port is available only on the Docker host's loopback interface.
 
-Configure an MCP client that supports Streamable HTTP:
+### Connect your client and make a first read
 
-| Setting | Value |
+| Client setting | Value |
 | --- | --- |
 | Endpoint | `http://127.0.0.1:8000/mcp` |
-| Authorization header | `Bearer ` followed by the ingress bearer from your local configuration |
 | Transport | Streamable HTTP |
+| Authorization header | `Bearer ` followed by your locally configured ingress bearer |
 
-Use your client's local secret configuration for that header. Do not enter the
-bearer in a model prompt. Invoke `server.version` with `{}` to verify upstream
-connectivity (the version endpoint alone does not prove authentication), then use `catalog.search` and `catalog.describe`
-to select an operation and call its execution lane. Use a read of a private repository to verify the service account before making
-changes; use a disposable repository for your first mutation.
+Store that header in your client's secret configuration, not in a model prompt.
+The loopback URL assumes the client runs on the Docker host. A client in another
+container or on another machine needs an explicitly configured private route;
+read [configuration](docs/configuration.md) before exposing the listener.
 
-See [tested clients and temporary-result handling](docs/clients.md) for compatibility
-limits and repeatable checks.
+In your client's tool interface:
 
-The container image is also published privately at
-`ghcr.io/chrisbennight/mcp-gitea-rs:sha-<commit>` after CI passes on main.
-Authenticate your Docker client to GHCR before pulling it. Use an immutable
-SHA tag or digest for deployment; `latest` follows successful main builds.
-See [automation](docs/automation.md) and [versioned container releases](docs/releases.md).
+1. Call `server.version` with `{}`. Expect a successful response containing
+   the upstream Gitea version. This checks connectivity, not authenticated access.
+2. Call `catalog.search` with `{"query":"repository.get","limit":5}`.
+3. Call `catalog.describe` with `{"name":"repository.get","detail":"full"}`.
+   Inspect the returned schema, then call `api.read` with the arguments below,
+   replacing the owner and repository with a private repository accessible to
+   the service account:
 
-Stop and remove your local container with `docker rm --force mcp-gitea-rs`.
+```json
+{
+  "operation_id": "repository.get",
+  "arguments": {"owner": "your-owner", "repo": "your-private-repository"}
+}
+```
 
-## Configuration and troubleshooting
+A successful private-repository read confirms authenticated access for that
+operation. Use a disposable repository for your first mutation. Generated
+operation names are invoked through their `api.*` execution lane, not directly
+as MCP tools. See [the operation reference](docs/operations.md).
 
-[Configuration](docs/configuration.md) describes required values, bearer
-rotation, allowed hosts, limits, and optional file upload. [Security](SECURITY.md)
-explains the trust boundary and private reporting.
+When finished, stop and remove the local container:
 
-- Startup exits with a configuration error: supply the named variable through
-  the container environment. The binary does not load `.env` by itself.
-- MCP returns 401: check the ingress bearer, including the `Bearer ` prefix.
-- A host check fails: match `GITEA_MCP_ALLOWED_HOSTS` to the client's Host header,
-  including the port. Do not disable the check to work around a proxy mismatch.
-- Gitea returns 401/403: check the relevant upstream account and scopes. The
-  ingress bearer is separate from Gitea credentials.
-- TLS fails: fix certificate trust or hostname configuration. Do not disable
-  certificate verification.
-- A large result's resource disappears: resources are temporary and local to
-  the session. Do not repeat a mutation just to recover its result.
+```sh
+docker rm --force mcp-gitea-rs
+```
 
-## Capabilities and development
+Your local `.env` and built image remain. Remove the credential file locally
+when no longer needed. For deployments, an authenticated Docker client can
+instead pull `ghcr.io/chrisbennight/mcp-gitea-rs:sha-<commit>` after CI publishes
+it. Prefer a SHA tag or digest. See [container releases](docs/releases.md).
 
-The [operation and response reference](docs/operations.md) covers discovery,
-execution lanes, errors, and large-result retrieval. Every operation in the
-pinned specification remains reachable through the typed interface to an
-appropriately authorized caller. [Specification provenance](openapi/SOURCE.md)
-records the input and regeneration procedure.
+## Deployment and compatibility
 
-`repository.bootstrap` can create or adopt a repository and converge its
-settings. Partial failures report completed steps and compensation options;
-they are not transactions. Access-token creation returns sensitive data once.
-`repository.secret.set_from_file` accepts secret bytes through a separate,
-bounded upload path; it requires a client or gateway implementing that transfer
-contract. Ordinary MCP tool-call support alone is insufficient.
+This is a **single-operator service**. Everyone holding the ingress bearer can
+use the configured Gitea accounts' capabilities. Run it locally or on a private
+network. An external gateway can add user identity, policy, approval, and audit;
+the service itself does not provide separate user identities. A gateway is not
+required for the local setup.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and review, [PLAN.md](PLAN.md)
-for remaining preparation, and [DECISIONS.md](DECISIONS.md) for architectural
-constraints. Licensed under [MIT](LICENSE).
+Streamable HTTP is supported; stdio and the older separate SSE transport are
+not. Other container platforms and Gitea or Forgejo versions are not yet
+validated. [Client compatibility](docs/clients.md) records the tested SDKs and
+their limits. [Security](SECURITY.md) explains the account and network boundary.
+
+`repository.secret.set_from_file` provides a bounded secret-upload workflow,
+but requires a client or gateway implementing the file-transfer extension.
+Ordinary MCP tool calls alone are insufficient. See [file uploads](docs/clients.md#file-uploads).
+
+## Help and contributions
+
+Start with [troubleshooting](docs/troubleshooting.md) for startup, authentication,
+network, and missing-result problems. Use the
+[issue tracker](https://github.com/chrisbennight/mcp-gitea-rs/issues) for bugs or
+feature requests. Include the revision or image digest, client and Gitea
+versions, reproduction steps, and sanitized errors. Never include credentials
+or private repository data. Report vulnerabilities through [Security](SECURITY.md).
+
+Maintained by [Chris Bennight](https://github.com/chrisbennight).
+Documentation fixes, bug reports, and focused contributions are welcome.
+[Contributing](CONTRIBUTING.md) covers development, tests, and review; no access
+to the maintainer's lab or paid evaluation service is needed. The
+[preparation plan](PLAN.md) records remaining public-release work, and
+[architectural decisions](DECISIONS.md) explain the implementation constraints.
+
+## License
+
+[MIT](LICENSE).

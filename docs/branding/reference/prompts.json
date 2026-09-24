@@ -1,0 +1,17 @@
+{
+  "tool": "OpenAI built-in image generation",
+  "date": "2026-09-23",
+  "selected_direction": "Tea",
+  "production_source": "../export.py",
+  "prompts": [
+    {
+      "stage": "concept",
+      "prompt": "Create a restrained branding board for mcp-gitea-rs: an original teacup with Git-branch steam, cream, espresso, terracotta and olive. Show a light README banner, dark banner, symbol and palette. Exact project name mcp-gitea-rs. Avoid official logos, mascots, generated UI, glow and gradients."
+    },
+    {
+      "stage": "wording correction",
+      "prompt": "Edit the selected Tea branding board. Keep the exact project name \"mcp-gitea-rs\", cup with Git-branch steam, warm cream/espresso/terracotta/olive palette and layout. In BOTH light and dark header examples replace the descriptive text with exactly \"Connect your AI tools to Gitea\". This expresses the direction of the connection, with Gitea as the destination. Make the descriptor dark espresso on cream and pale cream on espresso for strong contrast. Keep all backgrounds flat opaque solid colors, no shading, glow or gradients. Standardize all three cup symbols to the main upper-right version with its open curved handle terminating in a round node; same two-node branch steam. This is a brand reference board, not an application screenshot. No new text or claims."
+    }
+  ],
+  "note": "Concept prompt is summarized; wording-correction prompt is verbatim. Production geometry and contrast adjustments are defined by export.py."
+}

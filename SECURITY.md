@@ -1,7 +1,6 @@
 # Security
 
-During the private preparation period, report vulnerabilities directly to the
-repository owner through an existing private contact, or through GitHub's
+Report vulnerabilities directly to the repository owner through an existing private contact, or through GitHub's
 private vulnerability-reporting form when enabled. If that form is unavailable,
 ask the owner for a private route without including exploit details in an issue.
 Do not put credentials, secret values, or private repository data in public
@@ -21,7 +20,7 @@ retained resources remain sensitive even when a client ignores their metadata.
 Treat repository content, issues, logs, and tool responses as untrusted data,
 not instructions that authorize further actions.
 
-The preparation branch is maintained against the pinned Gitea version. No
+The `main` branch is maintained against the pinned Gitea version. No
 supported release series or security response-time guarantee has been declared.
 A public release requires a working private reporting route, an explicit version
 support policy, and review of the source and container artifacts to be published.

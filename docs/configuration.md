@@ -39,8 +39,11 @@ accepts exactly one numeric ID or unambiguous name. Token names cannot be
 numeric selectors, including signed forms.
 
 Omit both token-administration variables for PAT-only use. Empty values also
-count as omitted; configuring only one is a startup error. Token tools remain
-visible, but calls fail with configuration guidance when credentials are absent.
+count as omitted. To enable token administration, use a dedicated account that
+supports password-based API authentication; do not weaken a human account's
+authentication for this optional capability. Configuring only one variable is
+a startup error. Token tools remain visible, but calls fail with configuration
+guidance when credentials are absent.
 A bootstrap request that includes `access_token` is refused before any upstream
 request, so missing credentials cannot leave a partially created repository.
 Configured credentials are validated at startup; malformed credentials are not

@@ -1,10 +1,9 @@
 # Preparation plan
 
 Prepare a single-operator Gitea MCP server distributed as a Linux amd64 Docker
-container. GitHub is the source host; Gitea remains the upstream API. The private
-GitHub repository starts from the current source snapshot without prior Git
-history. Repository and package visibility remain private until a separate
-publication decision.
+container. GitHub is the source host; Gitea remains the upstream API. The source
+was imported as a snapshot without prior Git history. The repository is now
+public; container-package access is administered separately.
 
 ## Implemented during private preparation
 
@@ -22,12 +21,18 @@ publication decision.
 
 ## Remaining administration and public-release review
 
+The selected tea identity and [documentation writing guide](docs/writing.md)
+now support the README's task descriptions and Docker setup. The service's
+connection direction is explicit: MCP clients use this server to call Gitea.
+The [visual guide](docs/branding/README.md) records the concept and maintained
+assets.
+
 - Configure main-branch protection and native Dependabot security alerts/updates
   in GitHub. The source workflows do not establish those owner settings.
 - Complete third-party notices before public distribution (issue #12). The
   image inventory and project license do not replace upstream notices.
 - Confirm source publication rights, a working private security-report route,
-  and the exact source/image contents before changing visibility.
+  and the exact source/image contents as part of release review.
 
 Stdio, ARM images, additional Gitea/Forgejo versions, and multi-user remote
 operation are separate future decisions. No work here requires migrating

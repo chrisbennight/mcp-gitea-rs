@@ -1,7 +1,7 @@
 # Container releases
 
-The distribution is a Linux amd64 container. During private preparation, the
-maintained source is `main`; no stable version has been released. A release tag
+The distribution is a Linux amd64 container. The maintained source is `main`;
+no stable version has been released. A release tag
 is a tested snapshot, not a promise of backports to older versions. Support for
 additional Gitea versions, Forgejo, ARM, and multi-user operation is not implied.
 
@@ -27,8 +27,8 @@ publication state. Never delete or move an existing version alias to make a run
 pass. A wrong release requires a new version.
 
 This procedure does not change repository or package visibility, create a
-GitHub Release automatically, or claim image signing/attestation. Keep the
-repository and package private until their separate publication review.
+GitHub Release automatically, or claim image signing/attestation. The source
+repository is public; package access is administered separately.
 
 ## Inspect the distribution
 
@@ -74,8 +74,7 @@ still `.gitea/pr-review/` because AERB reads that location on GitHub. The
 `org.cacahuate` metadata namespace remains a client contract. These are deliberate
 compatibility/provenance references, not runtime dependencies on the lab.
 
-Before making anything public, confirm ownership and permission to publish the
-source, finish third-party notices, establish a working private security-report
-route, recheck source/container contents, and confirm GitHub access rules and
-package visibility. The current private preparation does not authorize that
-visibility change.
+Release review includes source publication rights, third-party notices, a working
+private security-report route, source/container contents, GitHub access rules,
+and package visibility. Public source access does not establish that these
+checks are complete.
