@@ -13,8 +13,9 @@ SDKs on 2026-09-11:
 | Python MCP SDK 2.2.0, explicit initialization handshake | Negotiated MCP 2025-11-25; tool schemas, catalog discovery, upstream reads, and retained-result retrieval passed |
 | TypeScript MCP SDK 1.30.0 | Initialization, tool schemas, catalog reads, upstream reads, and retained-result retrieval passed |
 
-Both clients confirmed that a second session cannot read a result retained by
-the first session, even when both use the same ingress bearer. The tests use a
+Those historical checks tested session isolation, which has since been replaced
+by identity ownership. The current compatibility scripts check retrieval across
+sessions using the same operator bearer. The tests use a
 local Gitea fake for controlled responses; the separate token and bootstrap
 integration tests exercise disposable Gitea. These results do not establish
 compatibility with every application built on those SDKs or with the newer
@@ -36,16 +37,16 @@ claiming support for a different client version. Official client sources are
 ## Temporary results
 
 Large successful results may include a resource link and
-`payload.resource_uri`. Keep the same MCP session open and use `result.select`
+`payload.resource_uri`. Authenticate as the same identity and use `result.select`
 for text ranges, literal matches, or selected JSON rows and fields. Use
 `resources/read` when the client needs the complete compatibility representation.
 Preserve the returned data locally if it must survive the
 conversation. `resources/list` is a discovery view, not durable storage.
 
 The default server keeps a result for at most 15 minutes from insertion. Reading
-it does not renew that lifetime. A result can disappear earlier when its session
-ends or the process restarts. Each object is limited to 16 MiB, with a shared
-64 MiB budget across sessions; a full store may refuse to retain a new payload.
+it does not renew that lifetime. Closing an MCP session does not delete results.
+A result can disappear earlier through eviction or a process restart. Each object is limited to 16 MiB, with a shared
+64 MiB budget across identities; a full store may refuse to retain a new payload.
 Always inspect `payload.retained` before attempting retrieval. These are bounds,
 not a promise that a URI remains available until a deadline.
 
@@ -71,7 +72,7 @@ upload integration. See [configuration](configuration.md) for the transfer
 boundary and [operation responses](operations.md) for result metadata.
 
 A capable host can download a retained result without placing its body in model
-context. Within the owning MCP session, send the custom `files/authorizeDownload`
+context. Authenticated as the owning identity, send the custom `files/authorizeDownload`
 request with `{"uri":"RETURNED_RESOURCE_URI"}`. The response contains `file`
 metadata (size, MIME type, and a base64url SHA-256 digest), a `download` descriptor
 (GET URL and required headers), and the payload's `sensitive` classification.
@@ -82,8 +83,8 @@ transfer runtime; do not put it in a prompt, command argument, or log.
 The helper sends the returned headers, streams the response to its destination,
 and verifies the declared size and digest before treating the file as complete.
 The download URL alone grants no access. The grant is short-lived and cannot
-outlive the retained result or its session; another session cannot authorize a
-download of that result. Grants are bounded and reusable while valid, so a
+outlive the retained result. A new session for the same identity can authorize a
+download; another identity cannot. Grants are bounded and reusable while valid, so a
 failed transfer can resume by requesting the complete file again without
 repeating the original Gitea mutation. Download responses use attachment and
 no-store headers and preserve sensitivity in `Gitea-Sensitive-Result`.

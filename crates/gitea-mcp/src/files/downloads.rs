@@ -1,4 +1,4 @@
-//! Short-lived download grants issued only by the payload's owning session.
+//! Short-lived download grants issued only by the payload's authenticated owner.
 
 use std::sync::Weak;
 
@@ -28,7 +28,7 @@ pub struct AuthorizeDownloadResult {
 }
 
 impl FilePlane {
-    /// Authorize a helper to download one result owned by this session.
+    /// Authorize a helper to download one result owned by this identity.
     ///
     /// # Errors
     ///
@@ -120,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn only_the_owning_session_can_authorize_a_complete_sensitive_download() {
+    fn only_the_owning_store_can_authorize_a_complete_sensitive_download() {
         let owner = store();
         let other = store();
         let resource = owner
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn grants_do_not_extend_result_or_session_lifetimes() {
+    fn grants_do_not_extend_result_or_store_lifetimes() {
         for expire_resource in [false, true] {
             let owner = store();
             let resource = owner

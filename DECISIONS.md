@@ -151,13 +151,21 @@ The context ceiling applies to generated and hand-written tool results. All
 paths use the same result-fitting step, and retained resources preserve the
 sensitivity classification of their originating result.
 
-`result.select` returns bounded evidence from the session's retained result,
+`result.select` returns bounded evidence from the authenticated identity's retained result,
 with typed ranges, literal search, and JSON pointers/field projection. Selection
 is capped at the smaller of the configured ceiling and 8 KiB after MCP
 serialization. Full-resource reads remain compatible, and hosts may obtain a
 short-lived `files/authorizeDownload` grant without passing the payload through
 model context. Transfer credentials belong in the host runtime. Grant issuance
-requires the owning session; retrieval rechecks the live store and credential.
+requires the owning identity; retrieval rechecks the live store and credential.
+Ownership is keyed by authenticated identity, not transport session. Standalone
+deployments have one operator identity; gateway deployments verify signed
+`X-MCP-Identity` assertions and key ownership by original issuer and subject on every
+request. Retained data survives session teardown until expiry, eviction, or
+process exit. Opaque random references avoid aliasing when an empty identity
+store is reclaimed and recreated. Identity-store metadata is bounded separately
+from the shared payload budget. No per-user upstream permissions are inferred;
+the external gateway remains responsible for authorization.
 Payload storage is immutable and shared across readers, and its byte reservation
 is released only after the final reader drops it. File-transfer handlers bound
 concurrency and streaming time; the proxy continues to bound connections and
@@ -262,7 +270,7 @@ surface.
 Published normalized schemas, catalog lookup/index data and generated descriptions
 are immutable per build and may be shared across sessions. Generated validators
 compile lazily once per operation. Validation instances, credentials and operation
-results remain request- or session-owned and never enter these caches. Discovery
+results remain request- or identity-owned and never enter these caches. Discovery
 reports an explicit callable tool alongside the existing operation name.
 
 An optional schema-rich search experiment preserved task success but increased

@@ -277,6 +277,10 @@ impl futures_util::Stream for DownloadStream {
 fn apply_ingress_controls(router: Router, settings: &Settings) -> Router {
     router
         .layer(middleware::from_fn_with_state(
+            settings.identity.clone(),
+            crate::identity::authenticate,
+        ))
+        .layer(middleware::from_fn_with_state(
             IngressState {
                 slots: Arc::new(Semaphore::new(settings.max_concurrent_requests)),
                 max_bytes: settings.max_request_bytes,
@@ -382,6 +386,7 @@ mod tests {
             max_request_bytes: 1024,
             max_concurrent_requests: 1,
             file_public_origin: None,
+            identity: None,
             log_level: "info".to_string(),
         }
     }

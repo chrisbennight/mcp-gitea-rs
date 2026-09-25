@@ -31,7 +31,7 @@ to this fixture.
 
 The fixture checks PAT-only startup, rejection of unauthenticated MCP requests,
 initialization, tool input schemas, catalog discovery, authenticated upstream
-reads, large-result contents, and isolation between sessions sharing a bearer.
+reads, large-result contents, and retrieval across sessions sharing an operator bearer.
 The Python check also verifies that a terminated session subsequently gets 404.
 It does not claim exhaustive protocol conformance, GUI-client integration,
 OAuth support, browser transport support, or generic file-upload support.

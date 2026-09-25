@@ -12,6 +12,9 @@ provider. No particular secret manager or gateway is required.
 | `GITEA_MCP_TOKEN_PASSWORD` | Optional password; configure together with username |
 | `GITEA_MCP_GATEWAY_BEARER_CURRENT` | Required ingress bearer, at least 32 bytes |
 | `GITEA_MCP_GATEWAY_BEARER_PREVIOUS` | Optional previous bearer during rotation |
+| `GITEA_MCP_IDENTITY_JWKS_URL` | Optional gateway verification-key URL; configure with issuer and actor |
+| `GITEA_MCP_IDENTITY_ISSUER` | Exact expected issuer of signed gateway identity assertions |
+| `GITEA_MCP_IDENTITY_ACTOR` | Exact expected gateway `act.sub` claim |
 | `GITEA_MCP_HOST` | Bind address, default `0.0.0.0` inside the container |
 | `GITEA_MCP_PORT` | Listen port, default `8000` |
 | `GITEA_MCP_ALLOWED_HOSTS` | Comma-separated Host allowlist; use the values in `.env.example` for the loopback Docker example |
@@ -28,6 +31,25 @@ compatibility. A local operator can configure it directly in the client.
 Rotate by setting the old current value as previous and installing a new
 current value; update clients, then remove the previous value. Never reuse a
 Gitea credential as the ingress bearer.
+
+Without identity verification settings, both rotation bearers authenticate the
+same operator and share retained results across MCP sessions. An unverified
+`X-MCP-Identity` header cannot select a different owner. For gateway deployments,
+configure all three identity variables. Every MCP request then also requires a
+signed `X-MCP-Identity` assertion: Ed25519, audience `gitea`, the configured issuer
+and actor, and a recent issuance with at most a five-minute lifetime. Missing or
+invalid assertions are rejected, without falling back to the operator identity.
+The signed original issuer (or gateway issuer when omitted) and subject identify
+the retained-result owner; session IDs,
+bearer rotation, and assertion renewal do not change ownership. The gateway
+continues to own policy and permission enforcement for upstream operations.
+
+The JWKS URL must use HTTPS or HTTP on a trusted private/loopback boundary.
+Redirects and proxy environment settings are disabled for key retrieval. Key
+responses are bounded to 64 KiB and 32 keys; successful and failed fetches are
+cached for 60 seconds. Publish overlapping keys before rotating signing keys.
+The retained-store registry holds at most 256 identities and reclaims idle,
+empty stores. Payloads retain the shared 64 MiB limit and 15-minute expiry.
 
 Use HTTPS for remote credential transport. Plain HTTP is appropriate only on a
 trusted local/private transport boundary. The HTTP listener itself does not
@@ -79,8 +101,8 @@ File upload requires `files/authorizeUpload`, the `x-mcp-file` argument extensio
 and the returned upload URL/header contract. The value stays in bounded process
 memory, is consumed once, and is never returned. Use a bare origin without a path
 prefix. Uploads and retained results are not durable across process restarts;
-multiple replicas require routing a session and its file transfers to the same process.
-Hosts can use `files/authorizeDownload` in the owning session to obtain a
+multiple replicas require routing an identity and its file transfers to the same process.
+Hosts can use `files/authorizeDownload` as the owning identity to obtain a
 short-lived grant for a retained result. Download authorization preserves size,
 digest, and sensitivity metadata; transfer headers stay inside the host runtime.
 Do not promise multi-user isolation from a shared bearer.

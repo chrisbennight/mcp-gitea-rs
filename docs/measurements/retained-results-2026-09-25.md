@@ -36,9 +36,12 @@ This is one local run of each mode on a debug build, not a production throughput
 or tail-latency estimate. Whole-resource compatibility deliberately returns the
 complete payload, so the modes fulfill different retrieval needs. The comparison
 demonstrates the cost avoided when a caller needs only bounded evidence.
-Independent regression tests cover Unicode continuation, JSON projection,
+At measurement time, independent regression tests covered Unicode continuation, JSON projection,
 session ownership, grant expiry, download capacity, and retaining the shared
 memory charge until the last active reader drops it.
+The current [ownership contract](../clients.md#temporary-results) follows the
+authenticated identity across sessions. These historical measurements have not
+been rerun for that change.
 
 Reproduce from the repository root after building the candidate:
 
