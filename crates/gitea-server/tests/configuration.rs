@@ -1,6 +1,36 @@
 use std::process::Command;
 
 #[test]
+fn ingress_configuration_rejects_invalid_limits_and_origins() {
+    for (name, value) in [
+        ("GITEA_MCP_BODY_TIMEOUT_SECONDS", "0"),
+        ("GITEA_MCP_BODY_TIMEOUT_SECONDS", "301"),
+        ("GITEA_MCP_ALLOWED_ORIGINS", "*"),
+        (
+            "GITEA_MCP_ALLOWED_ORIGINS",
+            "https://user:synthetic-private-value@example.test",
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_mcp-gitea-rs"))
+            .arg("--healthcheck")
+            .env_clear()
+            .env("GITEA_MCP_UPSTREAM_URL", "http://127.0.0.1:9")
+            .env("GITEA_MCP_SERVICE_TOKEN", "test-service-token")
+            .env(
+                "GITEA_MCP_GATEWAY_BEARER_CURRENT",
+                "0123456789abcdef0123456789abcdef",
+            )
+            .env(name, value)
+            .output()
+            .expect("server");
+        assert_eq!(output.status.code(), Some(2));
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains(name));
+        assert!(!stderr.contains("synthetic-private-value"));
+    }
+}
+
+#[test]
 fn startup_requires_an_explicit_upstream_before_accepting_credentials() {
     let output = Command::new(env!("CARGO_BIN_EXE_mcp-gitea-rs"))
         .arg("--healthcheck")

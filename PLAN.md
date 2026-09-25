@@ -38,6 +38,19 @@ Stdio, ARM images, additional Gitea/Forgejo versions, and multi-user remote
 operation are separate future decisions. No work here requires migrating
 private infrastructure, gateway code, historical issues, or Git history.
 
+## Service audit implementation
+
+[Epic #18](https://github.com/chrisbennight/mcp-gitea-rs/issues/18) tracks the
+eight executive priorities from the service audit. The implementation sequence
+is runtime security and execution bounds, complete pagination, selective retained
+results, measured discovery improvements, and exact-artifact publication.
+
+The runtime candidate addresses credential-safe diagnostics, process-wide MCP
+execution capacity, explicit browser Origin validation, and bounded body reading
+with immediate overload refusal (issues #19–#22). Every pinned operation,
+bootstrap, and token lifecycle remains available within the configured limits.
+Remaining epic outcomes stay open until their own reviewed changes are delivered.
+
 ## Product invariants
 
 - Every operation in the pinned specification remains reachable through a typed

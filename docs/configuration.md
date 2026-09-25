@@ -15,11 +15,13 @@ provider. No particular secret manager or gateway is required.
 | `GITEA_MCP_HOST` | Bind address, default `0.0.0.0` inside the container |
 | `GITEA_MCP_PORT` | Listen port, default `8000` |
 | `GITEA_MCP_ALLOWED_HOSTS` | Comma-separated Host allowlist; use the values in `.env.example` for the loopback Docker example |
+| `GITEA_MCP_ALLOWED_ORIGINS` | Optional comma-separated HTTP(S) browser origins; unset rejects every present Origin header while allowing native clients without one |
 | `GITEA_MCP_HTTP_TIMEOUT_SECONDS` | Upstream/upload timeout; default 30, allowed 1–300 |
+| `GITEA_MCP_BODY_TIMEOUT_SECONDS` | MCP request-body deadline; default 30, allowed 1–300 |
 | `GITEA_MCP_MAX_REQUEST_BYTES` | MCP request body limit; default 8 MiB, allowed 1 KiB–64 MiB |
-| `GITEA_MCP_MAX_CONCURRENT_REQUESTS` | Request concurrency; default 8, allowed 1–64 |
+| `GITEA_MCP_MAX_CONCURRENT_REQUESTS` | Shared MCP execution capacity and separate HTTP admission capacity; default 8, allowed 1–64 |
 | `GITEA_MCP_FILE_PUBLIC_ORIGIN` | Optional bare HTTP(S) origin reachable by the uploading client; unset disables uploads |
-| `GITEA_MCP_LOG_LEVEL` | Tracing filter, default `info` |
+| `GITEA_MCP_LOG_LEVEL` | Verbosity filter for reviewed service diagnostics, default `info`; dependency payload events remain disabled |
 
 The ingress bearer variable retains its historical `GATEWAY` name for
 compatibility. A local operator can configure it directly in the client.
@@ -30,6 +32,30 @@ Gitea credential as the ingress bearer.
 Use HTTPS for remote credential transport. Plain HTTP is appropriate only on a
 trusted local/private transport boundary. The HTTP listener itself does not
 terminate TLS. Configure a reverse proxy when TLS termination is needed.
+
+Browser clients must use an explicitly configured origin. Origins include the
+scheme, host, and optional port; wildcard, opaque `null`, and path values are
+not accepted. Preserve the client's Origin through a reverse proxy. This check
+does not replace bearer authentication or the Host allowlist, and does not add
+CORS support. Native clients can omit Origin.
+
+The HTTP admission limit bounds body buffering through response construction;
+an independent execution limit is shared across all MCP sessions and held while
+tools and workflows run and construct their results. Resource reads use the same
+execution capacity. Excess admission receives HTTP 503; excess MCP execution
+receives `gitea_execution_busy` with `outcome: not_sent`. Admission and execution
+never wait for a permit. A stalled MCP body receives HTTP 408 on its own
+deadline. These bounds do not limit the lifetime of an idle SSE connection or
+the client's download speed; keep connection limits at the reverse proxy.
+Cancelling a submitted upstream call does not imply that its mutation was
+reversed. Capacity remains held until that call returns or reaches its upstream
+timeout, and ambiguous mutation outcomes must not be replayed automatically.
+
+Only events on the reviewed `gitea_server::diagnostics` target are logged.
+Debug and trace filters cannot enable dependency events or spans containing
+protocol messages, headers, tool arguments, or retained payloads. Safe diagnostics
+include the listening address, HTTP method/status, and normalized upload error
+codes; dependency upgrades must pass the protocol logging regression tests.
 
 Gitea scopes and account permissions determine upstream authority. Start with
 read scopes for the domains you need, and enable write or administrative access
