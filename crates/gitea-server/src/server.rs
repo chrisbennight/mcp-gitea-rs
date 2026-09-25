@@ -120,6 +120,7 @@ pub fn router(
         router = router.merge(
             Router::new()
                 .route("/files/upload/{id}", axum::routing::put(receive_file))
+                .route("/files/download/{id}", get(send_download))
                 .with_state(upload_state),
         );
     }
@@ -171,9 +172,10 @@ async fn receive_file(
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => {
             let status = match error {
-                FileError::Unauthorized | FileError::Expired | FileError::Unavailable => {
-                    StatusCode::FORBIDDEN
-                }
+                FileError::Unauthorized
+                | FileError::Expired
+                | FileError::Unavailable
+                | FileError::MissingResult => StatusCode::FORBIDDEN,
                 FileError::TooManyOutstanding => StatusCode::SERVICE_UNAVAILABLE,
                 FileError::EntropyUnavailable => StatusCode::INTERNAL_SERVER_ERROR,
                 FileError::TooLarge | FileError::SizeMismatch => StatusCode::PAYLOAD_TOO_LARGE,
@@ -190,6 +192,86 @@ async fn receive_file(
 
 fn file_refusal(status: StatusCode, code: &str) -> Response {
     (status, Json(serde_json::json!({"error": code}))).into_response()
+}
+
+async fn send_download(
+    State(state): State<UploadState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let Some(credential) = headers
+        .get(TRANSFER_CREDENTIAL_HEADER)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return file_refusal(StatusCode::FORBIDDEN, "gitea_file_unauthorized");
+    };
+    let Ok(permit) = state.body_slots.clone().try_acquire_owned() else {
+        return file_refusal(StatusCode::SERVICE_UNAVAILABLE, "gitea_file_busy");
+    };
+    let resource = match state.files.read_download(&id, credential) {
+        Ok(resource) => resource,
+        Err(error) => return file_refusal(StatusCode::FORBIDDEN, error.code()),
+    };
+    let length = resource.body.len();
+    let media_type = axum::http::HeaderValue::from_str(&resource.content_type)
+        .unwrap_or_else(|_| axum::http::HeaderValue::from_static("application/octet-stream"));
+    let stream = DownloadStream {
+        bytes: Bytes::from_owner(resource.body),
+        _permit: permit,
+        deadline: Box::pin(tokio::time::sleep(state.body_timeout)),
+        failed: false,
+    };
+    let mut response = Body::from_stream(stream).into_response();
+    let headers = response.headers_mut();
+    headers.insert(axum::http::header::CONTENT_TYPE, media_type);
+    headers.insert(axum::http::header::CONTENT_LENGTH, length.into());
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("private, no-store"),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        axum::http::HeaderValue::from_static("attachment; filename=\"gitea-result\""),
+    );
+    headers.insert(
+        "x-content-type-options",
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        "gitea-sensitive-result",
+        axum::http::HeaderValue::from_static(if resource.sensitive { "true" } else { "false" }),
+    );
+    response
+}
+
+struct DownloadStream {
+    bytes: Bytes,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+    deadline: std::pin::Pin<Box<tokio::time::Sleep>>,
+    failed: bool,
+}
+
+impl futures_util::Stream for DownloadStream {
+    type Item = Result<Bytes, std::io::Error>;
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        use std::{future::Future, task::Poll};
+        if self.failed || self.bytes.is_empty() {
+            return Poll::Ready(None);
+        }
+        if self.deadline.as_mut().poll(context).is_ready() {
+            self.failed = true;
+            self.bytes = Bytes::new();
+            return Poll::Ready(Some(Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "download deadline exceeded",
+            ))));
+        }
+        let length = self.bytes.len().min(64 * 1024);
+        Poll::Ready(Some(Ok(self.bytes.split_to(length))))
+    }
 }
 
 fn apply_ingress_controls(router: Router, settings: &Settings) -> Router {
@@ -377,6 +459,78 @@ mod tests {
             .await
             .expect("response")
             .status()
+    }
+
+    #[tokio::test]
+    async fn downloads_require_the_transfer_credential_and_preserve_all_bytes() {
+        let settings = test_settings(None);
+        let files = FilePlane::new("http://localhost", Duration::from_secs(30)).unwrap();
+        let store =
+            gitea_mcp::resources::ResourceStore::new(gitea_mcp::resources::ResourceLimits {
+                max_object_bytes: 16 * 1024 * 1024,
+                max_total_bytes: 32 * 1024 * 1024,
+                time_to_live: Duration::from_mins(1),
+            });
+        let resource = store
+            .insert("logs", "text/plain", true, vec![b'x'; 10 * 1024 * 1024])
+            .unwrap();
+        let grant = files
+            .authorize_download(
+                &store,
+                gitea_mcp::files::AuthorizeDownloadParams { uri: resource.uri },
+            )
+            .unwrap();
+        let path = grant.download.url.strip_prefix("http://localhost").unwrap();
+        let app = test_app_with_files(&settings, files);
+        let refused = app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+        let downloaded = app
+            .oneshot(
+                Request::get(path)
+                    .header(
+                        TRANSFER_CREDENTIAL_HEADER,
+                        &grant.download.headers[TRANSFER_CREDENTIAL_HEADER],
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(downloaded.status(), StatusCode::OK);
+        assert_eq!(downloaded.headers()["gitea-sensitive-result"], "true");
+        assert_eq!(downloaded.headers()["cache-control"], "private, no-store");
+        let bytes = to_bytes(downloaded.into_body(), 16 * 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), resource.body.as_ref());
+    }
+
+    #[tokio::test]
+    async fn download_capacity_is_held_until_body_completion_or_cancellation() {
+        let slots = Arc::new(Semaphore::new(1));
+        let stream = DownloadStream {
+            bytes: Bytes::from_static(b"fixture"),
+            _permit: slots.clone().try_acquire_owned().unwrap(),
+            deadline: Box::pin(tokio::time::sleep(Duration::from_secs(1))),
+            failed: false,
+        };
+        let body = Body::from_stream(stream);
+        assert!(slots.try_acquire().is_err());
+        drop(body);
+        assert_eq!(slots.available_permits(), 1);
+        let stream = DownloadStream {
+            bytes: Bytes::from_static(b"fixture"),
+            _permit: slots.clone().try_acquire_owned().unwrap(),
+            deadline: Box::pin(tokio::time::sleep(Duration::from_millis(1))),
+            failed: false,
+        };
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(to_bytes(Body::from_stream(stream), 100).await.is_err());
+        assert_eq!(slots.available_permits(), 1);
     }
 
     #[tokio::test]

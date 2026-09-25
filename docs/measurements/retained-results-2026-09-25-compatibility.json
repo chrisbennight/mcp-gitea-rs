@@ -1,0 +1,30 @@
+{
+  "after_access": {
+    "VmHWM_kib": 211412,
+    "VmRSS_kib": 81908
+  },
+  "before_access": {
+    "VmHWM_kib": 108624,
+    "VmRSS_kib": 66236
+  },
+  "binary_sha256": "cffc40192671faad7534e35f1d0b81f3730af9ae41cbadfc904ff9efe3132609",
+  "concurrent_readers": 8,
+  "fixture_bytes": 10485760,
+  "harness_sha256": "79f7fcc71c887cbf571022fbc9d717161326dce7d731d48292947103da6ecc25",
+  "initial_rpc_json_bytes": 5589,
+  "maximum_latency_seconds": 7.368851982057095,
+  "median_latency_seconds": 6.278281393577345,
+  "mode": "compatibility",
+  "rpc_json_bytes_per_reader": [
+    10962520,
+    10962520,
+    10962520,
+    10962520,
+    10962520,
+    10962520,
+    10962521,
+    10962521
+  ],
+  "scope": "loopback fake; fresh process; debug build unless caller supplies otherwise",
+  "source_sha256": "9b9e159f48e841cc6c50d91fdac97d4e4d29fd32c4c6cd0d5fc3246ddd55e776"
+}

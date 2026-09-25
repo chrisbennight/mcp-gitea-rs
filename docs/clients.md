@@ -36,8 +36,10 @@ claiming support for a different client version. Official client sources are
 ## Temporary results
 
 Large successful results may include a resource link and
-`payload.resource_uri`. Keep the same MCP session open and read that URI through
-`resources/read`. Preserve the returned data locally if it must survive the
+`payload.resource_uri`. Keep the same MCP session open and use `result.select`
+for text ranges, literal matches, or selected JSON rows and fields. Use
+`resources/read` when the client needs the complete compatibility representation.
+Preserve the returned data locally if it must survive the
 conversation. `resources/list` is a discovery view, not durable storage.
 
 The default server keeps a result for at most 15 minutes from insertion. Reading
@@ -54,7 +56,7 @@ repeat a create, update, delete, token request, or bootstrap just to recover a
 lost response. Token values are returned once; losing one requires deliberate
 revocation/replacement rather than assuming creation never happened.
 
-## File uploads
+## File transfers
 
 Ordinary tool-call and resource support do not implement the file-transfer
 extension. `repository.secret.set_from_file` requires a client or gateway that
@@ -67,3 +69,27 @@ Leave `GITEA_MCP_FILE_PUBLIC_ORIGIN` unset unless the client implements that
 contract. Never paste a secret into a model prompt to compensate for a missing
 upload integration. See [configuration](configuration.md) for the transfer
 boundary and [operation responses](operations.md) for result metadata.
+
+A capable host can download a retained result without placing its body in model
+context. Within the owning MCP session, send the custom `files/authorizeDownload`
+request with `{"uri":"RETURNED_RESOURCE_URI"}`. The response contains `file`
+metadata (size, MIME type, and a base64url SHA-256 digest), a `download` descriptor
+(GET URL and required headers), and the payload's `sensitive` classification.
+The authorization response itself carries sensitive-result metadata because its
+headers contain a transfer credential. Keep that credential inside the host's
+transfer runtime; do not put it in a prompt, command argument, or log.
+
+The helper sends the returned headers, streams the response to its destination,
+and verifies the declared size and digest before treating the file as complete.
+The download URL alone grants no access. The grant is short-lived and cannot
+outlive the retained result or its session; another session cannot authorize a
+download of that result. Grants are bounded and reusable while valid, so a
+failed transfer can resume by requesting the complete file again without
+repeating the original Gitea mutation. Download responses use attachment and
+no-store headers and preserve sensitivity in `Gitea-Sensitive-Result`.
+
+Downloads share bounded transfer capacity and enforce a streaming deadline.
+The proxy still owns connection and slow-consumer limits. If a download expires,
+obtain a new grant while the original result remains available. The ordinary
+Python and TypeScript SDK checks cover whole-resource compatibility; protocol,
+authorization, and HTTP tests separately cover the file-transfer extension.

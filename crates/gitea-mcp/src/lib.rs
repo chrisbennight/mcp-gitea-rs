@@ -26,6 +26,7 @@ mod lanes;
 mod repository_secret;
 pub mod resources;
 mod schema_portability;
+mod selection;
 
 /// Marks a result whose body carries credential material, so a gateway can act
 /// on it without parsing the payload.
@@ -61,8 +62,10 @@ Lane results carry the executed operation's identity, risk, and \
 administrative flag in `org.cacahuate/` metadata, and results that mint or \
 return credentials carry an `org.cacahuate/sensitiveResult` marker; treat \
 that marker as authoritative for handling. Oversized successful payloads are \
-not inlined: they become `gitea-response:` handles read through \
-`resources/read`, and a failed generated call reports how far it got in its \
+not inlined: they become `gitea-response:` handles. Use `result.select` for \
+bounded text, literal search, or JSON evidence. `resources/read` preserves whole \
+payload compatibility; capable hosts can use `files/authorizeDownload` to save \
+the original outside model context. A failed generated call reports how far it got in its \
 `outcome` data — only `not_sent` is safe to reissue unchanged. \
 `resources/list` also carries `gitea-catalog:/index`, the line-per-operation \
 index behind `catalog.search`.\n\n\
@@ -491,11 +494,12 @@ impl GiteaMcp {
     /// than advisory.
     #[must_use]
     pub fn list_tools_payload() -> ListToolsResult {
-        let mut tools = Vec::with_capacity(12);
+        let mut tools = Vec::with_capacity(13);
         tools.push(server_version_tool());
         tools.extend(access_token_tools());
         tools.push(bootstrap::tool());
         tools.push(repository_secret::tool());
+        tools.push(selection::tool());
         tools.extend(discovery::tools());
         tools.extend(lanes::tools());
         let tools = tools
@@ -520,6 +524,9 @@ impl GiteaMcp {
         params: CallToolRequestParams,
     ) -> Result<CallToolResult, McpError> {
         let _permit = self.execution_permit()?;
+        if params.name == selection::TOOL {
+            return self.selection_result(params.arguments);
+        }
         if params.name == SERVER_VERSION_TOOL {
             if params
                 .arguments
@@ -735,6 +742,27 @@ impl GiteaMcp {
             operation.produces.as_slice().first().map(String::as_str),
             Some(operation),
         )
+    }
+
+    fn selection_result(
+        &self,
+        arguments: Option<Map<String, Value>>,
+    ) -> Result<CallToolResult, McpError> {
+        if arguments
+            .as_ref()
+            .is_some_and(|arguments| arguments.values().any(Value::is_null))
+        {
+            return Err(McpError::invalid_params(
+                "selection arguments cannot be null",
+                None,
+            ));
+        }
+        let arguments = parse_arguments::<selection::Arguments>(arguments)?;
+        arguments.validate()?;
+        let resource = self.store.read(&arguments.uri).ok_or_else(|| {
+            McpError::resource_not_found(missing_resource_message(&arguments.uri), None)
+        })?;
+        selection::select(&resource, &arguments, self.policy.context_ceiling_bytes)
     }
 
     /// Answer a discovery call from the registry, held to the same ceiling as
@@ -1318,7 +1346,7 @@ fn resource_contents(stored: resources::StoredResource) -> rmcp::model::Resource
     // and returning one as text would present a caller with mojibake in place of
     // the file it asked for.
     let as_text = is_textual_media_type(&stored.content_type)
-        .then(|| String::from_utf8(stored.body.clone()).ok())
+        .then(|| String::from_utf8(stored.body.to_vec()).ok())
         .flatten();
     match as_text {
         Some(text) => rmcp::model::ResourceContents::TextResourceContents {
@@ -1888,7 +1916,10 @@ impl ServerHandler for GiteaMcp {
         _ctx: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::CustomResult, McpError> {
         let _permit = self.execution_permit()?;
-        if request.method != files::AUTHORIZE_UPLOAD {
+        if !matches!(
+            request.method.as_str(),
+            files::AUTHORIZE_UPLOAD | files::AUTHORIZE_DOWNLOAD
+        ) {
             return Err(McpError::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 request.method,
@@ -1902,6 +1933,20 @@ impl ServerHandler for GiteaMcp {
                 None,
             )
         })?;
+        if request.method == files::AUTHORIZE_DOWNLOAD {
+            let params = serde_json::from_value::<files::AuthorizeDownloadParams>(
+                request.params.unwrap_or(Value::Null),
+            )
+            .map_err(|_| McpError::invalid_params("invalid file download authorization", None))?;
+            let result = files
+                .authorize_download(&self.store, params)
+                .map_err(|error| file_authorization_error(&error))?;
+            let mut value = serde_json::to_value(result).map_err(|_| {
+                McpError::internal_error("failed to encode download authorization", None)
+            })?;
+            value["_meta"] = json!({(SENSITIVE_RESULT_META):true});
+            return Ok(rmcp::model::CustomResult::new(value));
+        }
         let params = request
             .params
             .map(serde_json::from_value)
@@ -2234,6 +2279,7 @@ mod tests {
             "access_token.revoke",
             "repository.bootstrap",
             "repository.secret.set_from_file",
+            "result.select",
             "catalog.search",
             "catalog.describe",
             "api.read",
@@ -2246,7 +2292,7 @@ mod tests {
         // Exactly those: no catalog operation is published as a tool of its
         // own, which is what keeps its risk class enforced by lane routing
         // rather than merely annotated.
-        assert_eq!(published.len(), 12, "published surface: {names:?}");
+        assert_eq!(published.len(), 13, "published surface: {names:?}");
         assert!(!names.contains(&"repository.get"));
     }
 
@@ -3364,7 +3410,7 @@ mod tests {
             .expect("resource uri");
         assert_eq!(
             mcp.store.read(uri).map(|stored| stored.body),
-            Some(log.into_bytes()),
+            Some(log.into_bytes().into()),
             "the stored payload must be the whole original"
         );
     }
@@ -3891,7 +3937,11 @@ mod tests {
         assert_eq!(structured["payload"]["bytes"], json!(65536));
         let uri = structured["payload"]["resource_uri"].as_str().expect("uri");
         let stored = mcp.store.read(uri).expect("stored");
-        assert_eq!(stored.body, raw, "the original bytes, not the envelope");
+        assert_eq!(
+            stored.body.as_ref(),
+            raw.as_slice(),
+            "the original bytes, not the envelope"
+        );
         assert_eq!(stored.content_type, "application/zip");
     }
 
@@ -3923,6 +3973,66 @@ mod tests {
         );
         assert!(second.store.read(&uri).is_none(), "another session cannot");
         assert!(second.store.list().is_empty());
+    }
+
+    #[tokio::test]
+    async fn selection_and_download_authorization_keep_session_ownership_over_the_protocol() {
+        use rmcp::service::ServiceExt as _;
+        let files = files::FilePlane::new("https://example.test", Duration::from_secs(30)).unwrap();
+        let first = bounded_mcp(small_policy(8_192)).with_files(Some(files));
+        let uri = first
+            .store
+            .insert(
+                "fixture",
+                "text/plain",
+                true,
+                b"before\nFAILURE: fixture\nafter\n".to_vec(),
+            )
+            .unwrap()
+            .uri;
+        let second = first.new_session();
+        for (handler, owns) in [(first, true), (second, false)] {
+            let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+            let serving = tokio::spawn(handler.serve(server_io));
+            let peer = ().serve(client_io).await.unwrap();
+            let server = serving.await.unwrap().unwrap();
+            let selected = peer
+                .call_tool(
+                    CallToolRequestParams::new(selection::TOOL).with_arguments(
+                        json!({"uri":uri,"mode":"search","text":"FAILURE:"})
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    ),
+                )
+                .await;
+            assert_eq!(selected.is_ok(), owns);
+            if let Ok(selected) = selected {
+                assert_eq!(selected.meta.unwrap().0[SENSITIVE_RESULT_META], true);
+                assert!(
+                    selected.structured_content.unwrap()["selection"]["data"]
+                        .as_str()
+                        .unwrap()
+                        .contains("FAILURE:")
+                );
+            }
+            let grant = peer
+                .send_request(rmcp::model::ClientRequest::CustomRequest(
+                    rmcp::model::CustomRequest::new(
+                        files::AUTHORIZE_DOWNLOAD,
+                        Some(json!({"uri":uri})),
+                    ),
+                ))
+                .await;
+            assert_eq!(grant.is_ok(), owns);
+            if let Ok(rmcp::model::ServerResult::CustomResult(grant)) = grant {
+                assert_eq!(grant.0["_meta"][SENSITIVE_RESULT_META], true);
+                assert_eq!(grant.0["file"]["uri"], uri);
+                assert_eq!(grant.0["download"]["method"], "GET");
+            }
+            peer.cancel().await.unwrap();
+            server.cancel().await.unwrap();
+        }
     }
 
     #[test]
@@ -3983,7 +4093,7 @@ mod tests {
             operation_id: "x".to_string(),
             content_type: "text/plain".to_string(),
             sensitive,
-            body,
+            body: body.into(),
         }
     }
 
@@ -4100,7 +4210,7 @@ mod tests {
             operation_id: "x".to_string(),
             content_type: "application/zip".to_string(),
             sensitive: false,
-            body: b"PK-but-valid-utf8".to_vec(),
+            body: b"PK-but-valid-utf8".to_vec().into(),
         });
         assert!(matches!(
             contents,
@@ -4120,7 +4230,7 @@ mod tests {
                 operation_id: "x".to_string(),
                 content_type: media_type.to_string(),
                 sensitive: false,
-                body: b"readable".to_vec(),
+                body: b"readable".to_vec().into(),
             });
             assert!(
                 matches!(
@@ -4368,7 +4478,10 @@ mod tests {
                     .map(str::to_string)
             })
             .expect("uri");
-        assert_eq!(mcp.store.read(&uri).expect("stored").body, raw);
+        assert_eq!(
+            mcp.store.read(&uri).expect("stored").body.as_ref(),
+            raw.as_slice()
+        );
     }
 
     #[test]
@@ -4597,7 +4710,10 @@ mod tests {
                     .map(str::to_string)
             })
             .expect("uri");
-        assert_eq!(mcp.store.read(&uri).expect("stored").body, raw);
+        assert_eq!(
+            mcp.store.read(&uri).expect("stored").body.as_ref(),
+            raw.as_slice()
+        );
     }
 
     #[test]
@@ -4785,7 +4901,7 @@ mod tests {
             .expect("uri");
         let stored = mcp.store.read(&uri).expect("stored");
         assert_eq!(
-            String::from_utf8(stored.body).expect("utf8"),
+            String::from_utf8(stored.body.to_vec()).expect("utf8"),
             log,
             "a log is the log, not a quoted copy of one"
         );

@@ -61,6 +61,11 @@ health and independent MCP client checks. Its archive and manifest digests are
 bound to the source revision and workflow run; publication rejects mismatched
 evidence and verifies the registry digest without rebuilding (issue #26).
 
+Retained-result access adds bounded text, literal search, and JSON selection,
+plus session-authorized downloads for capable hosts (issue #24). Shared payload
+storage keeps active readers within the memory reservation, and complete
+`resources/read` compatibility remains available.
+
 ## Product invariants
 
 - Every operation in the pinned specification remains reachable through a typed

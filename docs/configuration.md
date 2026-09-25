@@ -20,7 +20,7 @@ provider. No particular secret manager or gateway is required.
 | `GITEA_MCP_BODY_TIMEOUT_SECONDS` | MCP request-body deadline; default 30, allowed 1–300 |
 | `GITEA_MCP_MAX_REQUEST_BYTES` | MCP request body limit; default 8 MiB, allowed 1 KiB–64 MiB |
 | `GITEA_MCP_MAX_CONCURRENT_REQUESTS` | Shared MCP execution capacity and separate HTTP admission capacity; default 8, allowed 1–64 |
-| `GITEA_MCP_FILE_PUBLIC_ORIGIN` | Optional bare HTTP(S) origin reachable by the uploading client; unset disables uploads |
+| `GITEA_MCP_FILE_PUBLIC_ORIGIN` | Optional bare HTTP(S) origin reachable by file-transfer clients; unset disables uploads and downloads |
 | `GITEA_MCP_LOG_LEVEL` | Verbosity filter for reviewed service diagnostics, default `info`; dependency payload events remain disabled |
 
 The ingress bearer variable retains its historical `GATEWAY` name for
@@ -79,5 +79,8 @@ File upload requires `files/authorizeUpload`, the `x-mcp-file` argument extensio
 and the returned upload URL/header contract. The value stays in bounded process
 memory, is consumed once, and is never returned. Use a bare origin without a path
 prefix. Uploads and retained results are not durable across process restarts;
-multiple replicas require routing a session and its uploads to the same process.
+multiple replicas require routing a session and its file transfers to the same process.
+Hosts can use `files/authorizeDownload` in the owning session to obtain a
+short-lived grant for a retained result. Download authorization preserves size,
+digest, and sensitivity metadata; transfer headers stay inside the host runtime.
 Do not promise multi-user isolation from a shared bearer.

@@ -55,7 +55,72 @@ pub struct StoredResource {
     /// it, so without this the sensitivity of a credential-bearing response
     /// would be known only to the reply that no longer contains it.
     pub sensitive: bool,
-    pub body: Vec<u8>,
+    pub body: RetainedBody,
+}
+
+/// Shared payload bytes whose budget reservation lasts through active readers.
+#[derive(Clone)]
+pub struct RetainedBody(Arc<Payload>);
+
+struct Payload {
+    bytes: Vec<u8>,
+    budget: Option<Arc<ResourceBudget>>,
+}
+
+impl Drop for Payload {
+    fn drop(&mut self) {
+        if let Some(budget) = &self.budget {
+            budget.release(self.bytes.len().saturating_add(ENTRY_OVERHEAD_BYTES));
+        }
+    }
+}
+
+impl std::ops::Deref for RetainedBody {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        &self.0.bytes
+    }
+}
+
+impl AsRef<[u8]> for RetainedBody {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+impl std::fmt::Debug for RetainedBody {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RetainedBody")
+            .field("bytes", &self.len())
+            .finish()
+    }
+}
+
+impl PartialEq for RetainedBody {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref() == other.as_ref()
+    }
+}
+impl Eq for RetainedBody {}
+
+impl Default for RetainedBody {
+    fn default() -> Self {
+        Self(Arc::new(Payload {
+            bytes: Vec::new(),
+            budget: None,
+        }))
+    }
+}
+
+#[cfg(test)]
+impl From<Vec<u8>> for RetainedBody {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(Arc::new(Payload {
+            bytes,
+            budget: None,
+        }))
+    }
 }
 
 /// Why a payload could not be stored.
@@ -120,7 +185,7 @@ impl ResourceBudget {
         };
         for store in stores {
             if let Ok(mut state) = store.state.try_lock() {
-                ResourceStore::expire(&mut state, now, store.limits.time_to_live, self);
+                ResourceStore::expire(&mut state, now, store.limits.time_to_live);
             }
         }
     }
@@ -320,13 +385,13 @@ impl ResourceStore {
         }
 
         let mut state = self.lock();
-        Self::expire(&mut state, now, self.limits.time_to_live, &self.budget);
+        Self::expire(&mut state, now, self.limits.time_to_live);
 
         // Make room within this session first, so a session that keeps reading
         // large objects recycles its own space instead of consuming the shared
         // budget indefinitely.
         while state.total_bytes.saturating_add(charge) > self.limits.max_total_bytes {
-            if !Self::evict_oldest(&mut state, &self.budget) {
+            if !Self::evict_oldest(&mut state) {
                 break;
             }
         }
@@ -342,7 +407,7 @@ impl ResourceStore {
             available = self.budget.reserve(charge).err();
         }
         while available.is_some() {
-            if !Self::evict_oldest(&mut state, &self.budget) {
+            if !Self::evict_oldest(&mut state) {
                 break;
             }
             available = self.budget.reserve(charge).err();
@@ -375,7 +440,10 @@ impl ResourceStore {
             operation_id: operation_id.to_string(),
             content_type: content_type.to_string(),
             sensitive,
-            body,
+            body: RetainedBody(Arc::new(Payload {
+                bytes: body,
+                budget: Some(Arc::clone(&self.budget)),
+            })),
         };
         state.total_bytes = state
             .total_bytes
@@ -396,7 +464,7 @@ impl ResourceStore {
     #[must_use]
     pub fn read_at(&self, now: Instant, uri: &str) -> Option<StoredResource> {
         let mut state = self.lock();
-        Self::expire(&mut state, now, self.limits.time_to_live, &self.budget);
+        Self::expire(&mut state, now, self.limits.time_to_live);
         state.entries.get(uri).map(|entry| entry.resource.clone())
     }
 
@@ -423,7 +491,7 @@ impl ResourceStore {
         limit: usize,
     ) -> (Vec<StoredResource>, Option<String>) {
         let mut state = self.lock();
-        Self::expire(&mut state, now, self.limits.time_to_live, &self.budget);
+        Self::expire(&mut state, now, self.limits.time_to_live);
 
         // Read by range over the insertion index, newest first. Sorting every
         // retained entry would make a fifty-item page cost what the whole store
@@ -466,7 +534,7 @@ impl ResourceStore {
                     operation_id: entry.resource.operation_id.clone(),
                     content_type: entry.resource.content_type.clone(),
                     sensitive: entry.resource.sensitive,
-                    body: Vec::new(),
+                    body: RetainedBody::default(),
                 });
             }
         }
@@ -477,13 +545,13 @@ impl ResourceStore {
     #[must_use]
     pub fn list_at(&self, now: Instant) -> Vec<StoredResource> {
         let mut state = self.lock();
-        Self::expire(&mut state, now, self.limits.time_to_live, &self.budget);
+        Self::expire(&mut state, now, self.limits.time_to_live);
         let mut entries: Vec<_> = state.entries.values().collect();
         entries.sort_by_key(|entry| std::cmp::Reverse(entry.sequence));
         entries
             .into_iter()
             .map(|entry| StoredResource {
-                body: Vec::new(),
+                body: RetainedBody::default(),
                 ..entry.resource.clone()
             })
             .collect()
@@ -518,7 +586,7 @@ impl ResourceStore {
     /// the expired ones are always a prefix of the index. Walking from the front
     /// and stopping at the first live entry costs what it removes; scanning
     /// every entry to find them made a fifty-item page pay for the whole store.
-    fn expire(state: &mut State, now: Instant, time_to_live: Duration, budget: &ResourceBudget) {
+    fn expire(state: &mut State, now: Instant, time_to_live: Duration) {
         while let Some((sequence, uri)) = state
             .order
             .iter()
@@ -534,7 +602,7 @@ impl ResourceStore {
             if now.duration_since(entry.stored_at) < time_to_live {
                 break;
             }
-            Self::remove(state, &uri, budget);
+            Self::remove(state, &uri);
         }
     }
 
@@ -544,7 +612,7 @@ impl ResourceStore {
     /// from the map is pruned rather than retried. Without that, any divergence
     /// between the two would spin the eviction loops forever instead of
     /// surfacing as a wrong answer.
-    fn evict_oldest(state: &mut State, budget: &ResourceBudget) -> bool {
+    fn evict_oldest(state: &mut State) -> bool {
         let Some((sequence, uri)) = state
             .order
             .iter()
@@ -554,14 +622,14 @@ impl ResourceStore {
             return false;
         };
         if state.entries.contains_key(&uri) {
-            Self::remove(state, &uri, budget);
+            Self::remove(state, &uri);
         } else {
             state.order.remove(&sequence);
         }
         true
     }
 
-    fn remove(state: &mut State, uri: &str, budget: &ResourceBudget) {
+    fn remove(state: &mut State, uri: &str) {
         if let Some(entry) = state.entries.remove(uri) {
             state.order.remove(&entry.sequence);
             let charge = entry
@@ -570,20 +638,7 @@ impl ResourceStore {
                 .len()
                 .saturating_add(ENTRY_OVERHEAD_BYTES);
             state.total_bytes = state.total_bytes.saturating_sub(charge);
-            budget.release(charge);
         }
-    }
-}
-
-impl Drop for ResourceStore {
-    fn drop(&mut self) {
-        // A finished session frees its payload bodies with the map, but the
-        // shared account only knows what it was told. Without this, ordinary
-        // session churn would charge the budget permanently and later sessions
-        // would be refused with nothing actually stored.
-        let state = self.state.get_mut().unwrap_or_else(PoisonError::into_inner);
-        self.budget.release(state.total_bytes);
-        state.total_bytes = 0;
     }
 }
 
@@ -602,6 +657,39 @@ mod tests {
             max_total_bytes,
             time_to_live: Duration::from_secs(seconds),
         })
+    }
+
+    #[test]
+    fn concurrent_readers_share_bytes_and_hold_the_charge_until_the_last_reader_drops() {
+        let size = 10 * 1024 * 1024;
+        let budget = Arc::new(ResourceBudget::new(charge(size)));
+        let limits = ResourceLimits {
+            max_object_bytes: size,
+            max_total_bytes: charge(size),
+            time_to_live: Duration::from_mins(1),
+        };
+        let store = ResourceStore::with_budget(limits, Arc::clone(&budget));
+        let stored = store
+            .insert("logs", "text/plain", true, vec![b'x'; size])
+            .unwrap();
+        let readers = (0..8)
+            .map(|_| store.read(&stored.uri).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            readers
+                .iter()
+                .all(|reader| reader.body.as_ptr() == stored.body.as_ptr())
+        );
+        assert_eq!(budget.used_bytes(), charge(size));
+        drop(stored);
+        drop(store);
+        assert_eq!(
+            budget.used_bytes(),
+            charge(size),
+            "active readers retain their memory reservation"
+        );
+        drop(readers);
+        assert_eq!(budget.used_bytes(), 0);
     }
 
     #[test]
@@ -982,13 +1070,14 @@ mod tests {
         let store = store(1024, charge(60) * 2 - 1, 60);
         let first = store
             .insert("a", "text/plain", false, vec![b'a'; 60])
-            .unwrap();
+            .unwrap()
+            .uri;
         let second = store
             .insert("b", "text/plain", false, vec![b'b'; 60])
             .unwrap();
 
         // The second payload does not fit beside the first, so the first goes.
-        assert!(store.read(&first.uri).is_none());
+        assert!(store.read(&first).is_none());
         assert_eq!(
             store.read(&second.uri).map(|stored| stored.body.len()),
             Some(60)
@@ -1034,12 +1123,13 @@ mod tests {
             latest = Some(
                 store
                     .insert("a", "text/plain", false, vec![b'a'; 60])
-                    .unwrap(),
+                    .unwrap()
+                    .uri,
             );
         }
         let latest = latest.unwrap();
         assert_eq!(
-            store.read(&latest.uri).map(|stored| stored.body.len()),
+            store.read(&latest).map(|stored| stored.body.len()),
             Some(60)
         );
         assert_eq!(store.list().len(), 1);
@@ -1075,13 +1165,14 @@ mod tests {
         let start = Instant::now();
         let first = store
             .insert_at(start, "a", "text/plain", false, vec![b'a'; 90])
-            .unwrap();
+            .unwrap()
+            .uri;
         let later = start + Duration::from_secs(61);
         let second = store
             .insert_at(later, "b", "text/plain", false, vec![b'b'; 90])
             .unwrap();
 
-        assert!(store.read_at(later, &first.uri).is_none());
+        assert!(store.read_at(later, &first).is_none());
         assert!(store.read_at(later, &second.uri).is_some());
     }
 
@@ -1110,9 +1201,12 @@ mod tests {
             .insert("a", "text/plain", false, vec![b'2'; 10])
             .unwrap();
         assert_ne!(first.uri, second.uri);
-        assert_eq!(store.read(&first.uri).map(|s| s.body), Some(vec![b'1'; 10]));
         assert_eq!(
-            store.read(&second.uri).map(|s| s.body),
+            store.read(&first.uri).map(|s| s.body.to_vec()),
+            Some(vec![b'1'; 10])
+        );
+        assert_eq!(
+            store.read(&second.uri).map(|s| s.body.to_vec()),
             Some(vec![b'2'; 10])
         );
     }

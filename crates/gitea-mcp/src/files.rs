@@ -13,6 +13,9 @@ use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
+mod downloads;
+pub use downloads::{AUTHORIZE_DOWNLOAD, AuthorizeDownloadParams, AuthorizeDownloadResult};
+
 pub const AUTHORIZE_UPLOAD: &str = "files/authorizeUpload";
 pub const STAGED_PREFIX: &str = "gitea-secret://staged/";
 pub const TRANSFER_CREDENTIAL_HEADER: &str = "Gitea-Transfer-Credential";
@@ -87,11 +90,11 @@ impl Drop for Staged {
 
 #[derive(Debug, Error)]
 pub enum FileError {
-    #[error("no upload authorization is available")]
+    #[error("no file transfer authorization is available")]
     Unauthorized,
-    #[error("the upload window has closed")]
+    #[error("the file transfer window has closed")]
     Expired,
-    #[error("too many secret uploads are outstanding")]
+    #[error("too many file transfers are outstanding")]
     TooManyOutstanding,
     #[error("the declared secret exceeds the upload limit")]
     TooLarge,
@@ -109,6 +112,10 @@ pub enum FileError {
     Unavailable,
     #[error("the staged secret must be non-empty UTF-8 text")]
     InvalidSecret,
+    #[error(
+        "the retained payload is unavailable; do not repeat the original operation to recover it"
+    )]
+    MissingResult,
 }
 
 impl FileError {
@@ -125,6 +132,7 @@ impl FileError {
             Self::EntropyUnavailable => "gitea_file_entropy_unavailable",
             Self::Unavailable => "gitea_file_unavailable",
             Self::InvalidSecret => "gitea_file_invalid_secret",
+            Self::MissingResult => "gitea_result_unavailable",
         }
     }
 }
@@ -134,6 +142,7 @@ pub struct FilePlane {
     ttl: Duration,
     tickets: Mutex<HashMap<String, Ticket>>,
     staged: Mutex<HashMap<String, Staged>>,
+    downloads: Mutex<HashMap<String, downloads::DownloadTicket>>,
 }
 
 impl FilePlane {
@@ -148,6 +157,7 @@ impl FilePlane {
             ttl,
             tickets: Mutex::new(HashMap::new()),
             staged: Mutex::new(HashMap::new()),
+            downloads: Mutex::new(HashMap::new()),
         });
         let weak = Arc::downgrade(&plane);
         thread::Builder::new()
@@ -340,6 +350,7 @@ impl FilePlane {
         let now = Instant::now();
         lock(&self.tickets).retain(|_, ticket| now <= ticket.expires_at);
         lock(&self.staged).retain(|_, staged| now <= staged.expires_at);
+        lock(&self.downloads).retain(|_, ticket| now <= ticket.expires_at);
     }
 
     fn sweep_and_next_wait(&self) -> Duration {
@@ -353,9 +364,14 @@ impl FilePlane {
             .values()
             .map(|staged| staged.expires_at)
             .min();
+        let next_download = lock(&self.downloads)
+            .values()
+            .map(|ticket| ticket.expires_at)
+            .min();
         next_ticket
             .into_iter()
             .chain(next_staged)
+            .chain(next_download)
             .min()
             .map_or(self.ttl, |expires_at| {
                 expires_at.saturating_duration_since(now)
