@@ -13,6 +13,7 @@ mod extensions;
 
 pub const TOOL_NAME: &str = "repository.bootstrap";
 const MAX_ITEMS: usize = 100;
+const MAX_TOKEN_SEARCH_PAGES: u32 = 20;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -938,12 +939,16 @@ async fn find_access_token(
     token_client: &TokenLifecycleClient,
     name: &str,
 ) -> Result<Option<AccessTokenMetadata>, ApiError> {
-    let tokens = token_client.list(Some(1), Some(100)).await?;
-    if let Some(token) = tokens.iter().find(|candidate| candidate.name == name) {
-        return Ok(Some(token.clone()));
-    }
-    if tokens.len() < 100 {
-        return Ok(None);
+    for page in 1..=MAX_TOKEN_SEARCH_PAGES {
+        let tokens = token_client.list(Some(page), Some(100)).await?;
+        // A server may cap a requested page below its requested limit. Only an
+        // empty page establishes exhaustion when continuation data is absent.
+        if tokens.is_empty() {
+            return Ok(None);
+        }
+        if let Some(token) = tokens.into_iter().find(|candidate| candidate.name == name) {
+            return Ok(Some(token));
+        }
     }
     // The list reached Gitea and answered 200; what was exceeded is this
     // workflow's own search bound. Reporting it as never sent would be false
@@ -1989,11 +1994,16 @@ mod tests {
         let tokens = (0..100)
             .map(|id| json!({"id": id + 1, "name": format!("other-{id}"), "scopes": []}))
             .collect::<Vec<_>>();
+        let mut responses = vec![(REPO_GET, "200 OK", "{}")];
+        for page in 1..=MAX_TOKEN_SEARCH_PAGES {
+            let request: &'static str = Box::leak(
+                format!("GET /api/v1/users/token-user/tokens?page={page}&limit=100 HTTP/1.1")
+                    .into_boxed_str(),
+            );
+            responses.push((request, "200 OK", leak_json(&tokens)));
+        }
         let result = run_bootstrap(
-            vec![
-                (REPO_GET, "200 OK", "{}"),
-                (TOKEN_GET, "200 OK", leak_json(&tokens)),
-            ],
+            responses,
             json!({
                 "owner": "acme",
                 "owner_kind": "organization",
@@ -2018,6 +2028,55 @@ mod tests {
             "the request plainly was sent: {}",
             failed.detail
         );
+    }
+
+    #[tokio::test]
+    async fn token_lookup_finds_a_later_page_under_a_server_page_cap_without_creating() {
+        let tokens = (1..=50)
+            .map(|id| json!({"id":id,"name":format!("other-{id}"),"scopes":[]}))
+            .collect::<Vec<_>>();
+        let result = run_bootstrap(vec![
+            (REPO_GET, "200 OK", "{}"),
+            (TOKEN_GET, "200 OK", leak_json(&tokens)),
+            ("GET /api/v1/users/token-user/tokens?page=2&limit=100 HTTP/1.1", "200 OK", r#"[{"id":51,"name":"agent","scopes":["read:user"]}]"#),
+        ], json!({"owner":"acme","owner_kind":"organization","repository":{"name":"widget"},"if_exists":"adopt","access_token":{"name":"agent","scopes":["read:user"]}})).await;
+        assert!(result.complete);
+        assert!(
+            result.access_token.is_none(),
+            "an existing token is adopted without minting a new value"
+        );
+    }
+
+    #[tokio::test]
+    async fn token_creation_waits_for_empty_page_and_page_failure_never_creates() {
+        for failed in [false, true] {
+            let mut responses = vec![
+                (REPO_GET, "200 OK", "{}"),
+                (
+                    TOKEN_GET,
+                    "200 OK",
+                    r#"[{"id":1,"name":"other","scopes":[]}]"#,
+                ),
+                (
+                    "GET /api/v1/users/token-user/tokens?page=2&limit=100 HTTP/1.1",
+                    if failed {
+                        "503 Service Unavailable"
+                    } else {
+                        "200 OK"
+                    },
+                    if failed { "{}" } else { "[]" },
+                ),
+            ];
+            if !failed {
+                responses.push(("POST /api/v1/users/token-user/tokens HTTP/1.1", "201 Created", r#"{"id":2,"name":"agent","sha1":"synthetic-created-token","scopes":["read:user"]}"#));
+            }
+            let result = run_bootstrap(responses, json!({"owner":"acme","owner_kind":"organization","repository":{"name":"widget"},"if_exists":"adopt","access_token":{"name":"agent","scopes":["read:user"]}})).await;
+            assert_eq!(result.complete, !failed);
+            assert_eq!(result.access_token.is_some(), !failed);
+            if failed {
+                assert_eq!(result.steps.last().unwrap().status, Some(503));
+            }
+        }
     }
 
     #[tokio::test]

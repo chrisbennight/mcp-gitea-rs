@@ -45,11 +45,16 @@ eight executive priorities from the service audit. The implementation sequence
 is runtime security and execution bounds, complete pagination, selective retained
 results, measured discovery improvements, and exact-artifact publication.
 
-The runtime candidate addresses credential-safe diagnostics, process-wide MCP
+The runtime implementation addresses credential-safe diagnostics, process-wide MCP
 execution capacity, explicit browser Origin validation, and bounded body reading
 with immediate overload refusal (issues #19–#22). Every pinned operation,
 bootstrap, and token lifecycle remains available within the configured limits.
 Remaining epic outcomes stay open until their own reviewed changes are delivered.
+
+Pagination normalization preserves bounded continuation and count metadata even
+when the pinned specification omits those headers. Bootstrap token reconciliation
+searches successive bounded pages and treats an incomplete inventory as a failed
+lookup, never as permission to create a token (issue #23).
 
 ## Product invariants
 

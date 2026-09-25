@@ -123,6 +123,13 @@ on the lane name plus the operation identity a lane call names explicitly.
 
 ## Responses are bounded twice, for different reasons
 
+Pagination metadata is normalized independently of the specification's response
+header declarations. Only same-origin, same-endpoint links yield page numbers;
+links never supply request targets. Unknown completeness remains unknown,
+including for a short page. Continuation stays inline beside retained payloads.
+Bootstrap token reconciliation uses bounded successive typed requests until an
+empty page or a match, and an incomplete inventory cannot authorize creation.
+
 Every response passing the upstream boundary is subject to a transport ceiling
 sized for process safety. Beneath it sits a context-scale ceiling sized for a
 reply a caller can actually read: a successful payload above it is not inlined,

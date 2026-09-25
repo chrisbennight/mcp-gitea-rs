@@ -297,7 +297,7 @@ impl GiteaMcp {
 
         let retention = self.retention(stored.as_ref(), payload_bytes_len);
 
-        let summary = json!({
+        let mut summary = json!({
             "operation_id": response.operation_id,
             "status": response.status,
             "success": response.success,
@@ -305,6 +305,10 @@ impl GiteaMcp {
             "headers": response.headers,
             "payload": retention,
         });
+        if let Some(pagination) = &response.pagination {
+            summary["pagination"] =
+                serde_json::to_value(pagination).map_err(|_| encode_failed())?;
+        }
         let link = resource_link(stored.as_ref().ok(), payload_bytes_len);
         Ok(fit_reply_to_ceiling(
             summary,
@@ -398,10 +402,15 @@ impl GiteaMcp {
         let stored = self
             .store
             .insert(tool, "application/json", sensitive, payload);
-        let summary = json!({
+        let mut summary = json!({
             "tool": tool,
             "payload": self.retention(stored.as_ref(), payload_bytes_len),
         });
+        if tool == ACCESS_TOKEN_LIST_TOOL
+            && let Some(pagination) = value.get("pagination")
+        {
+            summary["pagination"] = pagination.clone();
+        }
         Ok(fit_reply_to_ceiling(
             summary,
             resource_link(stored.as_ref().ok(), payload_bytes_len).as_ref(),
@@ -554,13 +563,13 @@ impl GiteaMcp {
             let arguments = parse_arguments::<ListTokenArguments>(params.arguments)?;
             let tokens = match self
                 .token_client()?
-                .list(arguments.page, arguments.limit)
+                .list_page(arguments.page, arguments.limit)
                 .await
             {
                 Ok(tokens) => tokens,
                 Err(error) => return upstream_failure(&error),
             };
-            return self.bound_value(ACCESS_TOKEN_LIST_TOOL, &json!({ "tokens": tokens }), false);
+            return self.bound_value(ACCESS_TOKEN_LIST_TOOL, &json!(tokens), false);
         }
         if params.name == ACCESS_TOKEN_REVOKE_TOOL {
             RevokeTokenArguments::reject_null_selectors(params.arguments.as_ref())?;
@@ -1503,7 +1512,8 @@ fn access_token_list_tool() -> Tool {
                     ],
                     "additionalProperties": false
                 }
-            }
+            },
+            "pagination": pagination_output_schema()
         }),
         &["tokens"],
     )));
@@ -1714,6 +1724,19 @@ fn server_version_output_schema() -> Map<String, Value> {
     displaceable_output_schema(json!({"version": {"type": "string"}}), &["version"])
 }
 
+fn pagination_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "next_page": {"type": ["integer", "null"], "minimum": 1},
+            "total_count": {"type": ["integer", "null"], "minimum": 0},
+            "complete": {"type": ["boolean", "null"]}
+        },
+        "required": ["next_page", "total_count", "complete"],
+        "additionalProperties": false
+    })
+}
+
 /// Result shape shared by every generated tool.
 ///
 /// A successful result carries either its payload in `data` or, when the payload
@@ -1740,6 +1763,7 @@ pub(crate) fn generated_output_schema() -> Map<String, Value> {
                     }
                 },
                 "data": {},
+                "pagination": pagination_output_schema(),
                 "payload": {
                     "type": "object",
                     "properties": {
@@ -1947,6 +1971,7 @@ mod tests {
             success: true,
             content_type: Some(content_type.to_string()),
             headers: Map::new(),
+            pagination: None,
             data,
         }
     }
@@ -3089,7 +3114,8 @@ mod tests {
                     "token_last_eight": "me-token",
                     "created_at": null,
                     "last_used_at": null
-                }]
+                }],
+                "pagination": {"next_page": null, "total_count": null, "complete": null}
             }))
         );
 
@@ -3525,6 +3551,27 @@ mod tests {
     }
 
     #[test]
+    fn pagination_remains_inline_when_a_generated_payload_is_retained() {
+        let mcp = bounded_mcp(small_policy(8_192));
+        let mut page = response(json!(["x".repeat(10_000)]), "application/json");
+        page.pagination = Some(gitea_api::Pagination {
+            next_page: Some(2),
+            total_count: Some(125),
+            complete: Some(false),
+        });
+        let result = mcp.operation_result(page, false, None, None).unwrap();
+        let value = result.structured_content.as_ref().unwrap();
+        assert_eq!(value["payload"]["retained"], true);
+        assert_eq!(
+            value["pagination"],
+            json!({"next_page":2,"total_count":125,"complete":false})
+        );
+        let schema = Value::Object(generated_output_schema());
+        assert!(jsonschema::validator_for(&schema).unwrap().is_valid(value));
+        assert!(measured_len(&result) <= 8_192);
+    }
+
+    #[test]
     fn an_error_response_is_never_displaced_into_a_resource() {
         // Error bodies are already tightly bounded upstream and carry the
         // recovery detail; hiding one behind a URI would cost a round trip to
@@ -3600,6 +3647,10 @@ mod tests {
             "a list this size must not be inlined: {structured}"
         );
         assert_eq!(structured["payload"]["retained"], json!(true));
+        assert_eq!(
+            structured["pagination"],
+            json!({"next_page":null,"total_count":null,"complete":null})
+        );
         assert!(
             measured_len(&result) <= 8_192,
             "the reply itself must be under the ceiling"
