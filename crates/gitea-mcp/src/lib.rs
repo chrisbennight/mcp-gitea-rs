@@ -26,6 +26,8 @@ mod bootstrap;
 mod discovery;
 pub mod files;
 mod lanes;
+mod owners;
+pub use owners::ResourceOwner;
 mod repository_secret;
 pub mod resources;
 mod schema_portability;
@@ -146,11 +148,11 @@ pub struct GiteaMcp {
     client: Arc<GiteaClient>,
     token_client: Option<Arc<TokenLifecycleClient>>,
     policy: LargeContentPolicy,
-    /// Shared by every session so that total retained bytes are bounded by the
-    /// configured aggregate rather than by that aggregate times the number of
-    /// live sessions.
+    // Tests observe the shared budget through this handle; stores own it in production.
+    #[cfg(test)]
     budget: Arc<resources::ResourceBudget>,
     store: Arc<resources::ResourceStore>,
+    owners: Arc<owners::OwnerStores>,
     files: Option<Arc<files::FilePlane>>,
     execution_slots: Arc<tokio::sync::Semaphore>,
 }
@@ -164,28 +166,34 @@ impl GiteaMcp {
         Self::with_large_content_policy(client, token_client, LargeContentPolicy::default())
     }
 
-    /// A handler for one client session, sharing upstream clients but owning its
-    /// own resource store.
-    ///
-    /// Cloning a handler deliberately shares the store, because the transport
-    /// clones it per request within a session. A session boundary is a different
-    /// thing: displaced payloads are the caller's own reads, and nothing about
-    /// being authenticated to this server entitles one conversation to another's
-    /// job logs. The transport calls this once per session.
+    /// A transport session under the same authenticated identity boundary.
+    /// Retained payloads survive session closure until expiry or eviction.
     #[must_use]
     pub fn new_session(&self) -> Self {
-        Self {
-            client: Arc::clone(&self.client),
-            token_client: self.token_client.clone(),
-            policy: self.policy,
-            budget: Arc::clone(&self.budget),
-            store: resources::ResourceStore::with_budget(
-                self.policy.limits,
-                Arc::clone(&self.budget),
-            ),
-            files: self.files.clone(),
-            execution_slots: Arc::clone(&self.execution_slots),
-        }
+        self.clone()
+    }
+
+    fn for_request(&self, ctx: &RequestContext<RoleServer>) -> Result<Self, McpError> {
+        let Some(parts) = ctx.extensions.get::<http::request::Parts>() else {
+            return Ok(self.clone());
+        };
+        let Some(owner) = parts.extensions.get::<ResourceOwner>() else {
+            return Ok(self.clone());
+        };
+        self.for_owner(owner.clone())
+    }
+
+    fn for_owner(&self, owner: ResourceOwner) -> Result<Self, McpError> {
+        let store = self.owners.get(owner).ok_or_else(|| {
+            McpError::internal_error(
+                "Retained-result identity capacity is busy; no upstream request was sent",
+                Some(json!({"code":"gitea_identity_capacity", "outcome":"not_sent"})),
+            )
+        })?;
+        Ok(Self {
+            store,
+            ..self.clone()
+        })
     }
 
     #[must_use]
@@ -210,6 +218,8 @@ impl GiteaMcp {
             token_client: token_client.into(),
             policy,
             store: resources::ResourceStore::with_budget(policy.limits, Arc::clone(&budget)),
+            owners: Arc::new(owners::OwnerStores::new(policy.limits, Arc::clone(&budget))),
+            #[cfg(test)]
             budget,
             files: None,
             execution_slots: Arc::new(tokio::sync::Semaphore::new(8)),
@@ -363,6 +373,9 @@ impl GiteaMcp {
                         "retaining it needs {required} bytes of shared resource storage and \
                          {available} are free"
                     ),
+                    resources::StoreError::EntropyUnavailable => {
+                        "could not create a retained-result reference".to_string()
+                    }
                 };
                 json!({
                     "inlined": false,
@@ -1939,34 +1952,37 @@ impl ServerHandler for GiteaMcp {
     async fn list_resources(
         &self,
         params: Option<PaginatedRequestParams>,
-        _ctx: RequestContext<RoleServer>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ListResourcesResult, McpError> {
         let _permit = self.execution_permit()?;
-        Ok(self.list_resources_page(params.as_ref().and_then(|params| params.cursor.as_deref())))
+        Ok(self
+            .for_request(&ctx)?
+            .list_resources_page(params.as_ref().and_then(|params| params.cursor.as_deref())))
     }
 
     async fn read_resource(
         &self,
         params: rmcp::model::ReadResourceRequestParams,
-        _ctx: RequestContext<RoleServer>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ReadResourceResult, McpError> {
-        self.read_resource_uri(&params.uri)
+        self.for_request(&ctx)?.read_resource_uri(&params.uri)
     }
 
     async fn call_tool(
         &self,
         params: CallToolRequestParams,
-        _ctx: RequestContext<RoleServer>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        self.invoke_tool(params).await
+        self.for_request(&ctx)?.invoke_tool(params).await
     }
 
     async fn on_custom_request(
         &self,
         request: rmcp::model::CustomRequest,
-        _ctx: RequestContext<RoleServer>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::CustomResult, McpError> {
         let _permit = self.execution_permit()?;
+        let scoped = self.for_request(&ctx)?;
         if !matches!(
             request.method.as_str(),
             files::AUTHORIZE_UPLOAD | files::AUTHORIZE_DOWNLOAD
@@ -1990,7 +2006,7 @@ impl ServerHandler for GiteaMcp {
             )
             .map_err(|_| McpError::invalid_params("invalid file download authorization", None))?;
             let result = files
-                .authorize_download(&self.store, params)
+                .authorize_download(&scoped.store, params)
                 .map_err(|error| file_authorization_error(&error))?;
             let mut value = serde_json::to_value(result).map_err(|_| {
                 McpError::internal_error("failed to encode download authorization", None)
@@ -4027,11 +4043,12 @@ mod tests {
     }
 
     #[test]
-    fn one_session_cannot_read_another_sessions_payloads() {
-        // Being authenticated to this server does not entitle a conversation to
-        // another conversation's job logs.
+    fn one_identity_cannot_read_another_identity_payloads() {
+        // Authentication does not grant access to another identity's retained data.
         let first = bounded_mcp(small_policy(64));
-        let second = first.new_session();
+        let second = first
+            .for_owner(ResourceOwner::verified("https://gateway.test", "other").unwrap())
+            .unwrap();
 
         let uri = first
             .bound_response(
@@ -4050,14 +4067,14 @@ mod tests {
 
         assert!(
             first.store.read(&uri).is_some(),
-            "its own session can read it"
+            "its owning identity can read it"
         );
-        assert!(second.store.read(&uri).is_none(), "another session cannot");
+        assert!(second.store.read(&uri).is_none(), "another identity cannot");
         assert!(second.store.list().is_empty());
     }
 
     #[tokio::test]
-    async fn selection_and_download_authorization_keep_session_ownership_over_the_protocol() {
+    async fn selection_and_download_authorization_keep_identity_ownership_over_the_protocol() {
         use rmcp::service::ServiceExt as _;
         let files = files::FilePlane::new("https://example.test", Duration::from_secs(30)).unwrap();
         let first = bounded_mcp(small_policy(8_192)).with_files(Some(files));
@@ -4071,8 +4088,11 @@ mod tests {
             )
             .unwrap()
             .uri;
-        let second = first.new_session();
-        for (handler, owns) in [(first, true), (second, false)] {
+        let second = first
+            .for_owner(ResourceOwner::verified("https://gateway.test", "other").unwrap())
+            .unwrap();
+        let reconnect = first.new_session();
+        for (handler, owns) in [(first, true), (reconnect, true), (second, false)] {
             let (server_io, client_io) = tokio::io::duplex(64 * 1024);
             let serving = tokio::spawn(handler.serve(server_io));
             let peer = ().serve(client_io).await.unwrap();
@@ -4118,8 +4138,7 @@ mod tests {
 
     #[test]
     fn a_clone_within_one_session_still_shares_its_payloads() {
-        // The transport clones the handler per request; the session boundary is
-        // new_session, not Clone.
+        // Cloning a handler preserves its authenticated resource owner.
         let mcp = bounded_mcp(small_policy(64));
         let uri = mcp
             .bound_response(
@@ -4324,11 +4343,11 @@ mod tests {
     }
 
     #[test]
-    fn sessions_share_one_retained_byte_budget() {
-        // Per-session stores keep one conversation from reading another's
+    fn identities_share_one_retained_byte_budget() {
+        // Per-identity stores keep one identity from reading another's
         // payloads, but they all occupy one process. Without a shared account
-        // every session would be entitled to the full aggregate cap and total
-        // retention would grow without bound in the number of sessions.
+        // every identity would be entitled to the full aggregate cap and total
+        // retention would grow without bound in the number of identities.
         let policy = LargeContentPolicy {
             context_ceiling_bytes: 64,
             limits: resources::ResourceLimits {
@@ -4338,7 +4357,9 @@ mod tests {
             },
         };
         let first = bounded_mcp(policy);
-        let second = first.new_session();
+        let second = first
+            .for_owner(ResourceOwner::verified("https://gateway.test", "other").unwrap())
+            .unwrap();
 
         let retained = first
             .bound_response(
@@ -4351,7 +4372,7 @@ mod tests {
             .expect("structured");
         assert_eq!(retained["payload"]["retained"], json!(true));
 
-        // The second session's call still succeeds — the upstream read happened
+        // The second identity's call still succeeds — the upstream read happened
         // — but the shared account is full, so its body is not kept.
         let refused = second
             .bound_response(
@@ -4367,7 +4388,7 @@ mod tests {
         assert_eq!(
             refused["payload"]["retained"],
             json!(false),
-            "the budget is shared, so the second session cannot retain its payload"
+            "the budget is shared, so the second identity cannot retain its payload"
         );
         let detail = refused["payload"]["detail"].as_str().expect("detail");
         assert!(
@@ -4591,7 +4612,7 @@ mod tests {
             .to_string();
         assert_no_retry_directive(&detail, "object-too-large detail");
 
-        // The other retention failure, reached only when a sibling session has
+        // The other retention failure, reached only when another identity has
         // taken the shared budget.
         let shared = LargeContentPolicy {
             context_ceiling_bytes: 16,
@@ -4602,7 +4623,9 @@ mod tests {
             },
         };
         let first = bounded_mcp(shared);
-        let second = first.new_session();
+        let second = first
+            .for_owner(ResourceOwner::verified("https://gateway.test", "other").unwrap())
+            .unwrap();
         first
             .bound_response(
                 &response(json!("a".repeat(65536)), "text/plain"),

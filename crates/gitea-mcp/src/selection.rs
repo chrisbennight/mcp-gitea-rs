@@ -43,7 +43,7 @@ pub fn tool() -> rmcp::model::Tool {
     let mut tool = Tool::new(
         Cow::Borrowed(TOOL),
         Cow::Borrowed(
-            "Read a bounded selection from a retained gitea-response URI owned by this session. Use text for UTF-8 byte ranges, search for a literal with surrounding lines, or json for an RFC 6901 pointer, rows and exact object fields. Resume with next_offset. Replies stay within 8 KiB; JSON parsing is limited to 2 MiB. Complete payloads remain available through resources/read and authorized downloads.",
+            "Read a bounded selection from a retained gitea-response URI owned by the authenticated identity. Use text for UTF-8 byte ranges, search for a literal with surrounding lines, or json for an RFC 6901 pointer, rows and exact object fields. Resume with next_offset. Replies stay within 8 KiB; JSON parsing is limited to 2 MiB. Complete payloads remain available through resources/read and authorized downloads.",
         ),
         Arc::new(crate::json_object_schema(
             json!({

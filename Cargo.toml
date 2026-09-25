@@ -21,9 +21,11 @@ bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 getrandom = "0.4"
+http = "1"
 gitea-api = { path = "crates/gitea-api" }
 gitea-mcp = { path = "crates/gitea-mcp" }
 jsonschema = { version = "=0.49.0", default-features = false }
+jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "query", "rustls"] }
 rmcp = { version = "=2.2.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 serde = { version = "=1.0.228", features = ["derive"] }

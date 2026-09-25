@@ -15,7 +15,7 @@
 - **Health passes but a tool fails:** `/healthz` checks the process, not Gitea.
   `server.version` checks connectivity but does not prove authenticated access.
   Read a private repository that the configured service account may access.
-- **A large result disappears:** results are temporary and session-local. Read
+- **A large result disappears:** results are temporary and identity-owned. Read
   [temporary-result handling](clients.md#temporary-results) before recovery.
   Never repeat a mutation just to recover its response.
 - **A token tool is unavailable:** configure both optional token-administration

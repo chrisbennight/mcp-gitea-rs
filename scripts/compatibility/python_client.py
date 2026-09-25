@@ -5,7 +5,6 @@ import os
 import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.exceptions import MCPError
 
 
 async def main():
@@ -51,13 +50,9 @@ async def main():
                 async with streamable_http_client(os.environ["MCP_TEST_URL"], http_client=http) as other_streams:
                     async with ClientSession(*other_streams, read_timeout_seconds=10) as other:
                         await other.initialize()
-                        try:
-                            await other.read_resource(uri)
-                        except MCPError as error:
-                            assert "no stored payload" in error.message
-                        else:
-                            raise AssertionError("another session read the retained result")
-                print("Python SDK: initialize, tool schemas, discovery, upstream read, retained resources, session isolation PASS; protocol=" + initialized.protocol_version)
+                        retained_again = await other.read_resource(uri)
+                        assert retained_again.contents[0].text == "fixture log line\n" * 8192
+                print("Python SDK: initialize, tool schemas, discovery, upstream read, retained resources, cross-session retrieval PASS; protocol=" + initialized.protocol_version)
         assert session_ids
         ended = await http.post(os.environ["MCP_TEST_URL"],
             headers={"Mcp-Session-Id": session_ids[0],

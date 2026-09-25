@@ -7,7 +7,10 @@ Do not put credentials, secret values, or private repository data in public
 issues, PRs, logs, or model prompts.
 
 The supported deployment is a single-operator MCP service on a local or private
-network. Direct Internet exposure and multi-user isolation are unsupported.
+network. Direct Internet exposure is unsupported. A shared ingress bearer alone
+does not distinguish users. Optional gateway identity verification separates
+retained results by signed identity issuer and subject; it does not grant per-user Gitea
+permissions or replace gateway authorization.
 Every `/mcp` request requires the configured ingress bearer. Possessing it
 permits use of the configured upstream accounts; operation annotations and lane
 routing are not per-user authorization. Use an external gateway for additional

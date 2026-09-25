@@ -28,11 +28,11 @@ try {
   const other = new Client({ name: 'other-session', version: '1.0.0' });
   try {
     await other.connect(transport());
-    await assert.rejects(other.readResource({ uri }), /no stored payload/);
+    assert.equal((await other.readResource({ uri })).contents[0].text, "fixture log line\n".repeat(8192));
   } finally {
     await other.close();
   }
-  console.log('TypeScript SDK: initialize, tool schemas, upstream read, catalog, retained resources, session isolation PASS');
+  console.log('TypeScript SDK: initialize, tool schemas, upstream read, catalog, retained resources, cross-session retrieval PASS');
 } finally {
   await client.close();
 }

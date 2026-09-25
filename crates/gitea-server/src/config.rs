@@ -43,6 +43,7 @@ pub struct Settings {
     pub max_request_bytes: usize,
     pub max_concurrent_requests: usize,
     pub file_public_origin: Option<String>,
+    pub identity: Option<crate::identity::IdentityVerifier>,
     pub log_level: String,
 }
 
@@ -62,6 +63,7 @@ impl fmt::Debug for Settings {
                 &self.gateway_bearer_previous.is_some(),
             )
             .field("host", &self.host)
+            .field("identity_verification_configured", &self.identity.is_some())
             .field("port", &self.port)
             .field("allowed_hosts", &self.allowed_hosts)
             .field("allowed_origins", &self.allowed_origins)
@@ -152,6 +154,7 @@ impl Settings {
             })
             .transpose()?;
         Ok(Self {
+            identity: identity_from_env()?,
             upstream_url,
             service_token,
             token_credentials,
@@ -169,6 +172,32 @@ impl Settings {
             log_level: value_or("GITEA_MCP_LOG_LEVEL", "info"),
         })
     }
+}
+
+fn identity_from_env() -> Result<Option<crate::identity::IdentityVerifier>, SettingsError> {
+    let identity = match (
+        optional("GITEA_MCP_IDENTITY_JWKS_URL"),
+        optional("GITEA_MCP_IDENTITY_ISSUER"),
+        optional("GITEA_MCP_IDENTITY_ACTOR"),
+    ) {
+        (None, None, None) => None,
+        (Some(url), Some(issuer), Some(actor)) => Some(
+            crate::identity::IdentityVerifier::new(&url, issuer, actor).map_err(|message| {
+                SettingsError::Invalid {
+                    name: "GITEA_MCP_IDENTITY_*",
+                    message: message.to_string(),
+                }
+            })?,
+        ),
+        _ => {
+            return Err(SettingsError::Invalid {
+                name: "GITEA_MCP_IDENTITY_*",
+                message: "configure JWKS_URL, ISSUER, and ACTOR together or omit all three"
+                    .to_string(),
+            });
+        }
+    };
+    Ok(identity)
 }
 
 fn optional(name: &str) -> Option<String> {
@@ -360,6 +389,7 @@ mod tests {
             max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
             max_concurrent_requests: DEFAULT_MAX_CONCURRENT_REQUESTS,
             file_public_origin: None,
+            identity: None,
             log_level: "info".to_string(),
         };
 

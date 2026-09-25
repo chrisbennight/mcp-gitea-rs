@@ -29,7 +29,7 @@ inputs without constructing REST paths or shell commands.
 
 **Check an Actions run.** Inspect workflow runs, jobs, and logs through the
 catalog. Large results can be returned as temporary resource links; the client
-must retrieve them in the same session. See [result handling](docs/clients.md#temporary-results).
+can retrieve them from another session authenticated as the same identity. See [result handling](docs/clients.md#temporary-results).
 
 **Set up a repository.** Use `repository.bootstrap` to create or adopt a
 repository and apply its settings. Optional access-token creation needs

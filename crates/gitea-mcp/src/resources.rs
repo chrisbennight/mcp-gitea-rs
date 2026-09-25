@@ -9,7 +9,7 @@
 //!
 //! Payloads above the context-scale ceiling are stored here and referenced by
 //! URI instead. The store is deliberately small and forgetful — it is a landing
-//! area for one conversation's oversized reads, not a cache and not a file
+//! area for one identity's oversized reads, not a cache and not a file
 //! server — so it is bounded three ways at once: per object, in aggregate, and
 //! by age. Every one of those bounds can be reached by ordinary use, so each is
 //! enforced rather than documented.
@@ -126,12 +126,14 @@ impl From<Vec<u8>> for RetainedBody {
 /// Why a payload could not be stored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StoreError {
+    /// A fresh opaque reference could not be generated.
+    EntropyUnavailable,
     /// The payload exceeds what the store will ever hold, so no amount of
     /// eviction would make room. Reported rather than silently truncated.
     ObjectTooLarge { bytes: usize, limit: usize },
-    /// The payload fits the caps in principle, but other live sessions are
+    /// The payload fits the caps in principle, but other live identities are
     /// holding enough that it will not fit now. Reported rather than evicting
-    /// another session's data, which this session cannot see and does not own.
+    /// another identity's data, which this identity cannot see and does not own.
     ///
     /// `required` is what retaining the payload would cost, which is its body
     /// plus the per-entry charge — not the body alone. Reporting the body would
@@ -140,18 +142,18 @@ pub enum StoreError {
     BudgetExhausted { required: usize, available: usize },
 }
 
-/// Retained bytes shared by every session's store.
+/// Retained bytes shared by every identity's store.
 ///
-/// Each session owns its payloads, but they all occupy one process. Without a
-/// shared account, N sessions would each be entitled to the full aggregate cap
-/// and total retention would grow without bound in the number of sessions.
+/// Each identity owns its payloads, but they all occupy one process. Without a
+/// shared account, N identities would each be entitled to the full aggregate cap
+/// and total retention would grow without bound in the number of identities.
 pub struct ResourceBudget {
     max_total_bytes: usize,
     used: AtomicUsize,
-    /// Every live store charging this budget, weakly held so a finished session
+    /// Every live store charging this budget, weakly held so a dropped store
     /// is collected normally. Used to reclaim expired charges from a store whose
-    /// own session has gone idle: expiry otherwise runs only when its owner is
-    /// touched, so one quiet conversation could hold capacity it can no longer
+    /// own identity has gone idle: expiry otherwise runs only when its owner is
+    /// touched, so one quiet identity could hold capacity it can no longer
     /// read.
     stores: Mutex<Vec<Weak<ResourceStore>>>,
 }
@@ -266,7 +268,7 @@ impl State {
     const fn visit(&self) {}
 }
 
-/// One session's payloads, charged against a process-wide byte budget.
+/// One identity's payloads, charged against a process-wide byte budget.
 pub struct ResourceStore {
     limits: ResourceLimits,
     budget: Arc<ResourceBudget>,
@@ -286,7 +288,7 @@ impl ResourceStore {
     /// A store sharing an existing process-wide budget.
     ///
     /// Returned behind an `Arc` because the budget keeps a weak handle to it, in
-    /// order to reclaim expired charges from a session that has gone idle.
+    /// order to reclaim expired charges from an identity that has gone idle.
     #[must_use]
     pub fn with_budget(limits: ResourceLimits, budget: Arc<ResourceBudget>) -> Arc<Self> {
         let store = Arc::new(Self {
@@ -384,10 +386,14 @@ impl ResourceStore {
             });
         }
 
+        let mut reference = [0u8; 32];
+        getrandom::fill(&mut reference).map_err(|_| StoreError::EntropyUnavailable)?;
+        let reference =
+            base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, reference);
         let mut state = self.lock();
         Self::expire(&mut state, now, self.limits.time_to_live);
 
-        // Make room within this session first, so a session that keeps reading
+        // Make room within this identity first, so an identity that keeps reading
         // large objects recycles its own space instead of consuming the shared
         // budget indefinitely.
         while state.total_bytes.saturating_add(charge) > self.limits.max_total_bytes {
@@ -396,12 +402,12 @@ impl ResourceStore {
             }
         }
 
-        // Then charge the shared account. If other sessions are holding too
+        // Then charge the shared account. If other identities are holding too
         // much, this insert is refused rather than evicting payloads belonging
-        // to a session this one cannot see and does not own.
+        // to an identity this one cannot see and does not own.
         let mut available = self.budget.reserve(charge).err();
         if available.is_some() {
-            // Another session may be holding capacity for payloads that have
+            // Another identity may be holding capacity for payloads that have
             // already expired but whose owner has not been touched since.
             self.budget.reclaim_expired(now);
             available = self.budget.reserve(charge).err();
@@ -434,7 +440,7 @@ impl ResourceStore {
 
         let sequence = state.next_sequence;
         state.next_sequence += 1;
-        let uri = format!("{RESOURCE_URI_SCHEME}:/{operation_id}/{sequence}");
+        let uri = format!("{RESOURCE_URI_SCHEME}:/{reference}");
         let resource = StoredResource {
             uri: uri.clone(),
             operation_id: operation_id.to_string(),
@@ -693,10 +699,10 @@ mod tests {
     }
 
     #[test]
-    fn a_finished_session_returns_its_bytes_to_the_shared_budget() {
+    fn dropping_a_store_returns_its_bytes_to_the_shared_budget() {
         // Dropping a store frees its payload bodies, but the shared account only
-        // knows what it is told. Without drop-time accounting, ordinary session
-        // churn would charge the budget permanently and later sessions would be
+        // knows what it is told. Without drop-time accounting, ordinary store
+        // teardown would charge the budget permanently and later stores would be
         // refused with nothing actually stored.
         let budget = Arc::new(ResourceBudget::new(charge(600)));
         let limits = ResourceLimits {
@@ -705,8 +711,8 @@ mod tests {
             time_to_live: Duration::from_secs(90),
         };
         {
-            let session = ResourceStore::with_budget(limits, Arc::clone(&budget));
-            session
+            let identity = ResourceStore::with_budget(limits, Arc::clone(&budget));
+            identity
                 .insert("a", "text/plain", false, vec![b'a'; 600])
                 .unwrap();
             assert_eq!(budget.used_bytes(), charge(600));
@@ -714,20 +720,20 @@ mod tests {
         assert_eq!(
             budget.used_bytes(),
             0,
-            "a finished session must not hold capacity forever"
+            "a finished identity must not hold capacity forever"
         );
 
         let next = ResourceStore::with_budget(limits, Arc::clone(&budget));
         assert!(
             next.insert("b", "text/plain", false, vec![b'b'; 600])
                 .is_ok(),
-            "the reclaimed capacity is usable by the next session"
+            "the reclaimed capacity is usable by the next identity"
         );
     }
 
     #[test]
-    fn an_idle_sessions_expired_payloads_do_not_hold_shared_capacity() {
-        // Expiry runs when a store is touched. A session that stops asking for
+    fn an_idle_identity_expired_payloads_do_not_hold_shared_capacity() {
+        // Expiry runs when a store is touched. An identity that stops asking for
         // anything would otherwise keep charging the budget for payloads nobody
         // can read any more.
         let budget = Arc::new(ResourceBudget::new(charge(600)));
@@ -740,19 +746,21 @@ mod tests {
         let busy = ResourceStore::with_budget(limits, Arc::clone(&budget));
 
         let start = Instant::now();
-        idle.insert_at(start, "idle", "text/plain", false, vec![b'i'; 600])
-            .unwrap();
+        let idle_uri = idle
+            .insert_at(start, "idle", "text/plain", false, vec![b'i'; 600])
+            .unwrap()
+            .uri;
         assert_eq!(budget.used_bytes(), charge(600));
 
-        // The idle session is never touched again; the busy one asks for space
+        // The idle identity is never touched again; the busy one asks for space
         // after the idle payload's lifetime has elapsed.
         let later = start + Duration::from_secs(91);
         let stored = busy
             .insert_at(later, "busy", "text/plain", false, vec![b'b'; 600])
-            .expect("expired capacity is reclaimed from the idle session");
+            .expect("expired capacity is reclaimed from the idle identity");
 
         assert!(busy.read_at(later, &stored.uri).is_some());
-        assert!(idle.read_at(later, "gitea-response:/idle/0").is_none());
+        assert!(idle.read_at(later, &idle_uri).is_none());
     }
 
     #[test]
@@ -965,7 +973,7 @@ mod tests {
                     "the reported numbers must justify the refusal"
                 );
             }
-            other @ StoreError::ObjectTooLarge { .. } => panic!("unexpected error: {other:?}"),
+            other => panic!("unexpected error: {other:?}"),
         }
     }
 
@@ -976,8 +984,8 @@ mod tests {
         // overhead, the account drifted on each replacement and could wrap,
         // after which nothing could be stored again.
         //
-        // Two sessions are required to reach that retry: a single store evicts
-        // its own entries down to its per-session cap before the shared
+        // Two identities are required to reach that retry: a single store evicts
+        // its own entries down to its per-identity cap before the shared
         // reservation can fail, so the retry never runs.
         let body = 200;
         let budget = Arc::new(ResourceBudget::new(charge(body) * 2));
@@ -989,14 +997,14 @@ mod tests {
         let held = ResourceStore::with_budget(limits, Arc::clone(&budget));
         let busy = ResourceStore::with_budget(limits, Arc::clone(&budget));
 
-        // One session parks a payload, so the shared account is half consumed
-        // and the other session's reservations must go through the retry.
+        // One identity parks a payload, so the shared account is half consumed
+        // and the other identity's reservations must go through the retry.
         held.insert("held", "text/plain", false, vec![b'h'; body])
             .expect("stored");
 
         for index in 0..10 {
             busy.insert(&format!("op{index}"), "text/plain", false, vec![b'b'; body])
-                .expect("the busy session recycles its own space");
+                .expect("the busy identity recycles its own space");
         }
 
         let live = held.list().len() + busy.list().len();

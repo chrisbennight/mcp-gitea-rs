@@ -62,9 +62,13 @@ bound to the source revision and workflow run; publication rejects mismatched
 evidence and verifies the registry digest without rebuilding (issue #26).
 
 Retained-result access adds bounded text, literal search, and JSON selection,
-plus session-authorized downloads for capable hosts (issue #24). Shared payload
+plus identity-authorized downloads for capable hosts (issue #24). Shared payload
 storage keeps active readers within the memory reservation, and complete
 `resources/read` compatibility remains available.
+Retained-result ownership follows the authenticated identity across MCP
+sessions. Gateway deployments verify caller assertions; standalone deployments
+share the existing operator identity. Expiry and process-wide memory limits
+remain enforced independently of connection lifetime.
 
 ## Product invariants
 

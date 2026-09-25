@@ -117,12 +117,12 @@ The original stays available through `resources/read` or the protected download
 extension described in [client compatibility](clients.md#file-transfers).
 
 For example, after retaining a job log, call `result.select` with
-`{"uri":"gitea-response:/example/0","mode":"search","text":"FAILED"}`,
+`{"uri":"gitea-response:/OPAQUE_REFERENCE","mode":"search","text":"FAILED"}`,
 replacing the example URI with the returned handle. Continue with the returned
 `next_offset` to inspect later matches.
 
 Stored payloads are bounded per object, in aggregate, and by age, so the store
-stays a landing area for one conversation's oversized reads rather than a cache.
+stays a landing area for an identity's oversized reads rather than a cache.
 A payload that expires or is evicted is simply absent. The call that produced it
 already completed, so repeating that call would repeat any side effect it had —
 which for a mutation or a deletion is rarely what a caller wants merely to
@@ -130,7 +130,7 @@ recover a copy of the result.
 
 Concurrent selections and downloads share immutable payload bytes. Their memory
 reservation lasts until the final reader releases the payload, including when
-its store entry expires or its session closes. A download in progress therefore
+its store entry expires or is evicted. A download in progress therefore
 cannot make its memory appear available for another retained object.
 
 The reply that replaces a payload is itself held to the ceiling, measured as the

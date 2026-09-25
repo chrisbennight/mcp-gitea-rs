@@ -1,6 +1,48 @@
 use std::process::Command;
 
 #[test]
+fn identity_configuration_is_complete_or_disabled() {
+    let settings = [
+        ("GITEA_MCP_IDENTITY_JWKS_URL", "http://127.0.0.1:9/jwks"),
+        ("GITEA_MCP_IDENTITY_ISSUER", "https://gateway.test"),
+        ("GITEA_MCP_IDENTITY_ACTOR", "gateway.test"),
+    ];
+    for mask in 0..8 {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_mcp-gitea-rs"));
+        command
+            .arg("--healthcheck")
+            .env_clear()
+            .env("GITEA_MCP_UPSTREAM_URL", "http://127.0.0.1:9")
+            .env("GITEA_MCP_SERVICE_TOKEN", "fixture")
+            .env(
+                "GITEA_MCP_GATEWAY_BEARER_CURRENT",
+                "0123456789abcdef0123456789abcdef",
+            )
+            .env("GITEA_MCP_HOST", "127.0.0.1")
+            .env("GITEA_MCP_PORT", "0");
+        for (index, (name, value)) in settings.iter().enumerate() {
+            if mask & (1 << index) != 0 {
+                command.env(name, value);
+            }
+        }
+        let output = command.output().unwrap();
+        let expected = if matches!(mask, 0 | 7) { 1 } else { 2 };
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "configuration mask {mask}"
+        );
+        if expected == 2 {
+            assert!(
+                String::from_utf8(output.stderr)
+                    .unwrap()
+                    .contains("configure JWKS_URL, ISSUER, and ACTOR together")
+            );
+        }
+    }
+}
+
+#[test]
 fn ingress_configuration_rejects_invalid_limits_and_origins() {
     for (name, value) in [
         ("GITEA_MCP_BODY_TIMEOUT_SECONDS", "0"),
