@@ -26,6 +26,9 @@ fn main() -> ExitCode {
     let filter = EnvFilter::try_new(&settings.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::registry()
         .with(filter)
+        .with(tracing_subscriber::filter::filter_fn(
+            gitea_server::logging::safe_metadata,
+        ))
         .with(tracing_subscriber::fmt::layer().json())
         .init();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -41,7 +44,7 @@ fn main() -> ExitCode {
     match runtime.block_on(run(cli, settings)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            tracing::error!(error = %error, "server failed");
+            tracing::error!(target: "gitea_server::diagnostics", error = %error, "server failed");
             ExitCode::FAILURE
         }
     }
@@ -83,7 +86,8 @@ async fn run(cli: Cli, settings: Settings) -> anyhow::Result<()> {
         .parse()
         .context("invalid bind address")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
-    tracing::info!(%address, "listening");
+    let address = listener.local_addr()?;
+    tracing::info!(target: "gitea_server::diagnostics", %address, "listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;

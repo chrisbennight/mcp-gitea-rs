@@ -37,7 +37,9 @@ pub struct Settings {
     pub host: String,
     pub port: u16,
     pub allowed_hosts: Vec<String>,
+    pub allowed_origins: Vec<String>,
     pub timeout: Duration,
+    pub body_timeout: Duration,
     pub max_request_bytes: usize,
     pub max_concurrent_requests: usize,
     pub file_public_origin: Option<String>,
@@ -62,7 +64,9 @@ impl fmt::Debug for Settings {
             .field("host", &self.host)
             .field("port", &self.port)
             .field("allowed_hosts", &self.allowed_hosts)
+            .field("allowed_origins", &self.allowed_origins)
             .field("timeout", &self.timeout)
+            .field("body_timeout", &self.body_timeout)
             .field("max_request_bytes", &self.max_request_bytes)
             .field("max_concurrent_requests", &self.max_concurrent_requests)
             .field(
@@ -127,6 +131,14 @@ impl Settings {
             DEFAULT_MAX_CONCURRENT_REQUESTS,
         )?;
         validate_max_concurrent_requests(max_concurrent_requests)?;
+        let body_timeout_seconds =
+            parsed_or("GITEA_MCP_BODY_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)?;
+        if !(MIN_TIMEOUT_SECONDS..=MAX_TIMEOUT_SECONDS).contains(&body_timeout_seconds) {
+            return Err(SettingsError::Invalid {
+                name: "GITEA_MCP_BODY_TIMEOUT_SECONDS",
+                message: format!("must be between {MIN_TIMEOUT_SECONDS} and {MAX_TIMEOUT_SECONDS}"),
+            });
+        }
         let file_public_origin = env::var("GITEA_MCP_FILE_PUBLIC_ORIGIN")
             .ok()
             .filter(|value| !value.is_empty())
@@ -148,7 +160,9 @@ impl Settings {
             host: value_or("GITEA_MCP_HOST", DEFAULT_HOST),
             port: parsed_or("GITEA_MCP_PORT", DEFAULT_PORT)?,
             allowed_hosts: allowed_hosts()?,
+            allowed_origins: parse_allowed_origins(&value_or("GITEA_MCP_ALLOWED_ORIGINS", ""))?,
             timeout: Duration::from_secs(timeout_seconds),
+            body_timeout: Duration::from_secs(body_timeout_seconds),
             max_request_bytes,
             max_concurrent_requests,
             file_public_origin,
@@ -215,6 +229,41 @@ fn allowed_hosts() -> Result<Vec<String>, SettingsError> {
     Ok(hosts)
 }
 
+fn parse_allowed_origins(raw: &str) -> Result<Vec<String>, SettingsError> {
+    let invalid = || SettingsError::Invalid {
+        name: "GITEA_MCP_ALLOWED_ORIGINS",
+        message: "must contain at most 32 bare HTTP(S) origins, each at most 255 bytes".to_string(),
+    };
+    let entries: Vec<_> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .collect();
+    if entries.len() > MAX_ALLOWED_HOSTS {
+        return Err(invalid());
+    }
+    entries
+        .into_iter()
+        .map(|entry| {
+            if entry.len() > MAX_HOST_CHARACTERS {
+                return Err(invalid());
+            }
+            normalize_origin(entry).ok_or_else(invalid)
+        })
+        .collect()
+}
+
+pub(crate) fn normalize_origin(value: &str) -> Option<String> {
+    let uri: axum::http::Uri = value.parse().ok()?;
+    if uri
+        .path_and_query()
+        .is_some_and(|path| !matches!(path.as_str(), "" | "/"))
+    {
+        return None;
+    }
+    gitea_mcp::files::validate_public_origin(value).ok()
+}
+
 fn validate_bearer(name: &'static str, bearer: &str) -> Result<(), SettingsError> {
     if bearer.len() < 32 {
         return Err(SettingsError::Invalid {
@@ -250,6 +299,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn origins_are_explicit_bounded_http_origins() {
+        assert_eq!(parse_allowed_origins("").unwrap(), Vec::<String>::new());
+        assert_eq!(
+            parse_allowed_origins("https://EXAMPLE.test:443,http://localhost:8080").unwrap(),
+            ["https://example.test", "http://localhost:8080"]
+        );
+        for invalid in [
+            "*",
+            "null",
+            "file:///tmp",
+            "https://user:password@example.test",
+            "https://example.test/path",
+            "https://example.test/path/..",
+            "https://example.test?x=y",
+        ] {
+            assert!(parse_allowed_origins(invalid).is_err());
+        }
+        assert!(parse_allowed_origins(&vec!["https://example.test"; 33].join(",")).is_err());
+        assert!(parse_allowed_origins(&format!("https://{}.test", "a".repeat(256))).is_err());
+    }
+
+    #[test]
     fn rotation_bearers_share_the_same_minimum_strength() {
         assert!(validate_bearer("current", "0123456789abcdef0123456789abcdef").is_ok());
         assert!(validate_bearer("previous", "short").is_err());
@@ -283,7 +354,9 @@ mod tests {
             host: DEFAULT_HOST.to_string(),
             port: DEFAULT_PORT,
             allowed_hosts: vec!["localhost".to_string()],
+            allowed_origins: Vec::new(),
             timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
+            body_timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
             max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
             max_concurrent_requests: DEFAULT_MAX_CONCURRENT_REQUESTS,
             file_public_origin: None,

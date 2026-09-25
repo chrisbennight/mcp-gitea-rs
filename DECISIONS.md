@@ -1,5 +1,27 @@
 # Architectural decisions
 
+## Runtime bounds follow the protected work
+
+HTTP admission and MCP execution use separate process-wide capacities. An HTTP
+response may begin streaming before its tool finishes, so its admission permit
+cannot bound tool execution. MCP calls hold execution capacity through upstream
+work and result construction; session creation shares that capacity rather than
+creating another limit. Excess work is refused immediately, with a not-sent
+outcome for MCP calls, instead of creating a wait queue. A submitted operation
+keeps its permit until completion even when its protocol request is cancelled.
+Connection counts and slow response consumers remain proxy responsibilities.
+
+MCP body reading has its own deadline. Browser Origin validation is explicit:
+an empty configured allowlist rejects every present Origin, while authenticated
+native clients may omit it. Host and bearer checks still apply independently.
+
+Production logging admits only the reviewed service diagnostic target. Operator
+verbosity cannot enable dependency events or spans, because the MCP transport
+can log complete requests, results, and notifications even at ordinary levels.
+Protocol regression tests exercise the production subscriber after dependency
+updates. This preserves credential operations while protecting their data from
+the logging boundary.
+
 ## Published images target amd64 only
 
 The supported container platform is amd64, so CI and the local image builder always request

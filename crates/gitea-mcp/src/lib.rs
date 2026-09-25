@@ -146,6 +146,7 @@ pub struct GiteaMcp {
     budget: Arc<resources::ResourceBudget>,
     store: Arc<resources::ResourceStore>,
     files: Option<Arc<files::FilePlane>>,
+    execution_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl GiteaMcp {
@@ -177,6 +178,7 @@ impl GiteaMcp {
                 Arc::clone(&self.budget),
             ),
             files: self.files.clone(),
+            execution_slots: Arc::clone(&self.execution_slots),
         }
     }
 
@@ -204,6 +206,7 @@ impl GiteaMcp {
             store: resources::ResourceStore::with_budget(policy.limits, Arc::clone(&budget)),
             budget,
             files: None,
+            execution_slots: Arc::new(tokio::sync::Semaphore::new(8)),
         }
     }
 
@@ -211,6 +214,22 @@ impl GiteaMcp {
     pub fn with_files(mut self, files: Option<Arc<files::FilePlane>>) -> Self {
         self.files = files;
         self
+    }
+
+    /// Set the shared execution capacity before creating client sessions.
+    #[must_use]
+    pub fn with_execution_limit(mut self, limit: usize) -> Self {
+        self.execution_slots = Arc::new(tokio::sync::Semaphore::new(limit.clamp(1, 64)));
+        self
+    }
+
+    fn execution_permit(&self) -> Result<tokio::sync::SemaphorePermit<'_>, McpError> {
+        self.execution_slots.try_acquire().map_err(|_| {
+            McpError::internal_error(
+                "Server execution capacity is busy; no upstream request was sent",
+                Some(json!({"code": "gitea_execution_busy", "outcome": "not_sent"})),
+            )
+        })
     }
 
     /// Turn one upstream response into a tool result.
@@ -402,6 +421,7 @@ impl GiteaMcp {
         &self,
         uri: &str,
     ) -> Result<rmcp::model::ReadResourceResult, McpError> {
+        let _permit = self.execution_permit()?;
         if uri == CATALOG_INDEX_URI {
             return Ok(rmcp::model::ReadResourceResult::new(vec![
                 rmcp::model::ResourceContents::TextResourceContents {
@@ -490,6 +510,7 @@ impl GiteaMcp {
         &self,
         params: CallToolRequestParams,
     ) -> Result<CallToolResult, McpError> {
+        let _permit = self.execution_permit()?;
         if params.name == SERVER_VERSION_TOOL {
             if params
                 .arguments
@@ -1808,6 +1829,7 @@ impl ServerHandler for GiteaMcp {
         _params: Option<PaginatedRequestParams>,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
+        let _permit = self.execution_permit()?;
         Ok(Self::list_tools_payload())
     }
 
@@ -1816,6 +1838,7 @@ impl ServerHandler for GiteaMcp {
         params: Option<PaginatedRequestParams>,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ListResourcesResult, McpError> {
+        let _permit = self.execution_permit()?;
         Ok(self.list_resources_page(params.as_ref().and_then(|params| params.cursor.as_deref())))
     }
 
@@ -1840,6 +1863,7 @@ impl ServerHandler for GiteaMcp {
         request: rmcp::model::CustomRequest,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::CustomResult, McpError> {
+        let _permit = self.execution_permit()?;
         if request.method != files::AUTHORIZE_UPLOAD {
             return Err(McpError::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
@@ -3608,7 +3632,8 @@ mod tests {
             )
             .expect("token client"),
         );
-        let mcp = GiteaMcp::with_large_content_policy(client, token_client, small_policy(4_096));
+        let mcp = GiteaMcp::with_large_content_policy(client, token_client, small_policy(4_096))
+            .with_execution_limit(1);
         let request =
             CallToolRequestParams::new(bootstrap::TOOL_NAME).with_arguments(Map::from_iter([
                 ("owner".to_string(), json!("acme")),
