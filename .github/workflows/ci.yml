@@ -23,6 +23,9 @@ jobs:
 
   image:
     needs: test
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/build.yml
 
   publish:
@@ -31,6 +34,28 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: ./.github/workflows/build.yml
-    with:
-      publish: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download tested artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.image.outputs.artifact_id }}
+          path: ${{ runner.temp }}/validated-image
+          merge-multiple: true
+      - name: Install image transfer tool
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Verify publication evidence
+        run: python3 scripts/image_artifact.py verify "$RUNNER_TEMP/validated-image"
+      - name: Publish tested artifact
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          trap 'skopeo logout ghcr.io >/dev/null' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          python3 scripts/image_artifact.py publish "$RUNNER_TEMP/validated-image"

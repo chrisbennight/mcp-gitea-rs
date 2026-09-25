@@ -56,6 +56,11 @@ when the pinned specification omits those headers. Bootstrap token reconciliatio
 searches successive bounded pages and treats an incomplete inventory as a failed
 lookup, never as permission to create a token (issue #23).
 
+Container publication promotes the OCI artifact exercised by the image job's
+health and independent MCP client checks. Its archive and manifest digests are
+bound to the source revision and workflow run; publication rejects mismatched
+evidence and verifies the registry digest without rebuilding (issue #26).
+
 ## Product invariants
 
 - Every operation in the pinned specification remains reachable through a typed
