@@ -151,6 +151,18 @@ The context ceiling applies to generated and hand-written tool results. All
 paths use the same result-fitting step, and retained resources preserve the
 sensitivity classification of their originating result.
 
+`result.select` returns bounded evidence from the session's retained result,
+with typed ranges, literal search, and JSON pointers/field projection. Selection
+is capped at the smaller of the configured ceiling and 8 KiB after MCP
+serialization. Full-resource reads remain compatible, and hosts may obtain a
+short-lived `files/authorizeDownload` grant without passing the payload through
+model context. Transfer credentials belong in the host runtime. Grant issuance
+requires the owning session; retrieval rechecks the live store and credential.
+Payload storage is immutable and shared across readers, and its byte reservation
+is released only after the final reader drops it. File-transfer handlers bound
+concurrency and streaming time; the proxy continues to bound connections and
+slow consumers.
+
 One limit could not do both jobs. A bound large enough to keep the process alive
 is far too large to keep a reply readable, and a bound small enough to keep a
 reply readable would reject payloads a caller legitimately wants. Two ceilings

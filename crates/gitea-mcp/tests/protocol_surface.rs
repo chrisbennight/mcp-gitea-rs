@@ -129,7 +129,8 @@ async fn a_connected_session_lists_the_published_surface() {
             .any(|tool| tool.name == "repository.secret.set_from_file"),
         "a session lists the governed secret-input workflow"
     );
-    assert_eq!(tools.len(), 12);
+    assert!(tools.iter().any(|tool| tool.name == "result.select"));
+    assert_eq!(tools.len(), 13);
 
     peer.cancel().await.expect("client shuts down");
     server.cancel().await.expect("server shuts down");

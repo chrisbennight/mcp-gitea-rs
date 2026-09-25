@@ -168,7 +168,7 @@ their limits. [Security](SECURITY.md) explains the account and network boundary.
 
 `repository.secret.set_from_file` provides a bounded secret-upload workflow,
 but requires a client or gateway implementing the file-transfer extension.
-Ordinary MCP tool calls alone are insufficient. See [file uploads](docs/clients.md#file-uploads).
+Ordinary MCP tool calls alone are insufficient. See [file transfers](docs/clients.md#file-transfers).
 
 ## Help and contributions
 
