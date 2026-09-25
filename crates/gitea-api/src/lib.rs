@@ -7,12 +7,14 @@ use url::Url;
 
 pub mod catalog;
 mod execute;
+mod pagination;
 mod token;
 
 pub use execute::{OperationResponse, validate_path_segment};
+pub use pagination::Pagination;
 pub use token::{
-    AccessTokenCreated, AccessTokenMetadata, AccessTokenSelector, CreateAccessToken,
-    TokenLifecycleClient, validate_create_access_token,
+    AccessTokenCreated, AccessTokenMetadata, AccessTokenPage, AccessTokenSelector,
+    CreateAccessToken, TokenLifecycleClient, validate_create_access_token,
 };
 
 const API_PREFIX: &str = "api/v1/";

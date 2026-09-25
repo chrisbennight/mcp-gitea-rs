@@ -32,6 +32,8 @@ pub struct OperationResponse {
     pub success: bool,
     pub content_type: Option<String>,
     pub headers: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pagination: Option<crate::Pagination>,
     pub data: Value,
 }
 
@@ -115,6 +117,7 @@ impl GiteaClient {
             success: false,
             content_type: None,
             headers: Map::new(),
+            pagination: None,
             data: json!({"message": "Gitea rejected the operation"}),
         };
         if response
@@ -140,6 +143,7 @@ impl GiteaClient {
             Err(_) if !status.is_success() => Map::new(),
             Err(error) => return Err(delivered(error)),
         };
+        let mut pagination = pagination_for(operation, &response);
         let mut body = Vec::new();
         loop {
             match response.chunk().await {
@@ -175,15 +179,31 @@ impl GiteaClient {
         } else {
             normalize_error_data(decoding_content_type, &body, &arguments, &self.secrets())
         };
+        if let Some(pagination) = &mut pagination {
+            pagination.observe_empty_page(data.as_array().is_some_and(Vec::is_empty));
+        }
         Ok(OperationResponse {
             operation_id: operation.operation_id.clone(),
             status: status.as_u16(),
             success: status.is_success(),
             content_type,
             headers,
+            pagination,
             data,
         })
     }
+}
+
+fn pagination_for(
+    operation: &OperationSpec,
+    response: &reqwest::Response,
+) -> Option<crate::Pagination> {
+    (response.status().is_success()
+        && operation.parameters.iter().any(|parameter| {
+            matches!(parameter.location, ParameterLocation::Query)
+                && matches!(parameter.name.as_str(), "page" | "limit")
+        }))
+    .then(|| crate::Pagination::from_headers(response.headers(), response.url()))
 }
 
 #[derive(Serialize)]
@@ -594,6 +614,41 @@ mod tests {
         });
 
         assert!(matches!(file_part(&upload), Err(ApiError::InvalidUpload)));
+    }
+
+    #[tokio::test]
+    async fn undeclared_pagination_headers_survive_normalization() {
+        let (base_url, request) = loopback_response_with_headers(
+            "200 OK",
+            "application/json",
+            br#"[{"number":1}]"#,
+            None,
+            "link: <?page=2&limit=100>; rel=\"next\"\r\nx-total-count: 125\r\n",
+        )
+        .await;
+        let operation = crate::catalog::exposed_operation("repository.list_pull_requests").unwrap();
+        let response = client(&base_url)
+            .execute_operation(
+                operation,
+                Map::from_iter([
+                    ("owner".into(), json!("acme")),
+                    ("repo".into(), json!("widget")),
+                    ("page".into(), json!(1)),
+                    ("limit".into(), json!(100)),
+                ]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.pagination,
+            Some(crate::Pagination {
+                next_page: Some(2),
+                total_count: Some(125),
+                complete: Some(false),
+            })
+        );
+        assert!(!response.headers.contains_key("link"));
+        request.await.unwrap();
     }
 
     #[tokio::test]

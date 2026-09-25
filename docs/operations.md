@@ -47,6 +47,24 @@ Base64-encoded explicitly. HTTP failures remain structured tool results, while
 request-construction, transport, decoding, and hard-bound failures become
 normalized MCP errors.
 
+Successful paginated operations and `access_token.list` also return a
+`pagination` object with `next_page`, `total_count`, and `complete`. A null
+value means that the upstream response did not establish that fact. A short
+page alone does not prove completeness. Recognized continuation links are
+reduced to page numbers only after checking the configured origin and endpoint;
+the server never follows a returned URL. Pass `next_page` to the same typed
+operation, retaining its other arguments. This metadata remains inline when
+the payload is retained. Concurrent upstream changes can still alter pages;
+pagination does not provide a snapshot of the repository.
+
+Bootstrap looks for an existing named access token through successive pages,
+including when Gitea caps pages below the requested size. It creates a token
+only after an empty page establishes absence. The search stops after 20 pages,
+with at most 100 entries per page and the configured upstream timeout per
+request. A bound or page failure reports an incomplete workflow and never
+authorizes token creation. Previously completed workflow steps remain in the
+report.
+
 A successful payload above the context-scale ceiling is not inlined. Job logs,
 artifacts, and repository archives routinely run to megabytes, and placing one
 in a reply costs the caller its working context. Above the ceiling the result

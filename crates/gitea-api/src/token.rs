@@ -82,6 +82,12 @@ pub struct AccessTokenMetadata {
     pub last_used_at: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AccessTokenPage {
+    pub tokens: Vec<AccessTokenMetadata>,
+    pub pagination: crate::Pagination,
+}
+
 impl TokenLifecycleClient {
     /// Construct the Basic Auth client used only for access-token lifecycle.
     ///
@@ -158,6 +164,19 @@ impl TokenLifecycleClient {
         page: Option<u32>,
         limit: Option<u32>,
     ) -> Result<Vec<AccessTokenMetadata>, ApiError> {
+        Ok(self.list_page(page, limit).await?.tokens)
+    }
+
+    /// List token metadata with safe continuation information.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same bounded transport and validation errors as [`Self::list`].
+    pub async fn list_page(
+        &self,
+        page: Option<u32>,
+        limit: Option<u32>,
+    ) -> Result<AccessTokenPage, ApiError> {
         validate_pagination(page, limit)?;
         let mut url = self.tokens_url()?;
         {
@@ -178,6 +197,7 @@ impl TokenLifecycleClient {
             return Err(self.refusal(response).await);
         }
         let status = response.status().as_u16();
+        let mut pagination = crate::Pagination::from_headers(response.headers(), response.url());
         let tokens: Vec<AccessTokenMetadata> = read_json(response)
             .await
             .map_err(|error| error.delivered_with(status))?;
@@ -189,7 +209,8 @@ impl TokenLifecycleClient {
                     .delivered_with(status),
             );
         }
-        Ok(tokens)
+        pagination.observe_empty_page(tokens.is_empty());
+        Ok(AccessTokenPage { tokens, pagination })
     }
 
     /// Revoke one access token by an explicit Gitea identifier or name.
