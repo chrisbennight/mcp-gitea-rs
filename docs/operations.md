@@ -32,6 +32,27 @@ published individually — that surface was retired on the replicated
 measurement recorded in `scripts/eval/baselines/` and DECISIONS.md — and an
 operation name handed to `tools/call` is refused with the lane that runs it.
 
+Search and describe return `execution_tool`, the actual callable MCP tool.
+Generated operations also carry their canonical `operation_id`; pass that ID and
+the described arguments to the indicated lane. The existing `tool` field remains
+the operation's discovery name. Hand-written tools name themselves as the
+execution tool.
+
+Search recognizes `CI` as Actions and `PR`/`PRs` as pull requests. These complete
+terms use reviewed meanings, so `PR` does not match unrelated substrings such as
+“property.” Generated agent guidance is searchable alongside names and summaries.
+Exact identifiers still rank first, and pagination remains deterministic.
+
+Use `catalog.describe` for the complete input contract. Search keeps its existing
+summary view and page limits. Complete bootstrap settings remain in the published
+tool and its full description. A schema-rich search experiment was evaluated and
+not promoted; see the [discovery measurements](measurements/discovery-2026-09-25.md).
+
+Published normalized schemas, lookup maps, search text, catalog index, generated
+descriptions, and lazily compiled validators are process-wide immutable state.
+The caches contain catalog contracts only. Request arguments, results, retained
+payloads, and credentials are never stored in them.
+
 Generated tool names use a searchable `<domain>.<operation>` shape, such as
 `repository.get`, `repository.create_branch`, and
 `organization.create_team`. Tool arguments are closed JSON Schema objects.

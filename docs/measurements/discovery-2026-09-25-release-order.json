@@ -1,0 +1,62 @@
+[
+  {
+    "sequence": 1,
+    "candidate": "before",
+    "path": "discovery-2026-09-25-release-before-1.json",
+    "load_before": [
+      15.24658203125,
+      12.16552734375,
+      23.26171875
+    ],
+    "load_after": [
+      14.74609375,
+      12.11279296875,
+      23.18505859375
+    ]
+  },
+  {
+    "sequence": 2,
+    "candidate": "after",
+    "path": "discovery-2026-09-25-release-after-1.json",
+    "load_before": [
+      14.74609375,
+      12.11279296875,
+      23.18505859375
+    ],
+    "load_after": [
+      14.74609375,
+      12.11279296875,
+      23.18505859375
+    ]
+  },
+  {
+    "sequence": 3,
+    "candidate": "after",
+    "path": "discovery-2026-09-25-release-after-2.json",
+    "load_before": [
+      14.74609375,
+      12.11279296875,
+      23.18505859375
+    ],
+    "load_after": [
+      14.20556640625,
+      12.04443359375,
+      23.10302734375
+    ]
+  },
+  {
+    "sequence": 4,
+    "candidate": "before",
+    "path": "discovery-2026-09-25-release-before-2.json",
+    "load_before": [
+      14.20556640625,
+      12.04443359375,
+      23.10302734375
+    ],
+    "load_after": [
+      14.20556640625,
+      12.04443359375,
+      23.10302734375
+    ]
+  }
+]

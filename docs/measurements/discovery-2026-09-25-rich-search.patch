@@ -1,0 +1,165 @@
+--- a/crates/gitea-mcp/src/discovery.rs
++++ b/crates/gitea-mcp/src/discovery.rs
+@@ -118,0 +119 @@
++    pub include_schema: Option<bool>,
+@@ -204,0 +206,5 @@
++    let mut schema_budget = 2048;
++    let registered = arguments
++        .include_schema
++        .unwrap_or(false)
++        .then(crate::GiteaMcp::list_tools_payload);
+@@ -209 +215,7 @@
+-        .map(|(_, entry)| match_row(entry))
++        .map(|(_, entry)| {
++            let mut row = match_row(entry);
++            if let Some(registered) = &registered {
++                attach_schema(&mut row, entry, &registered.tools, &mut schema_budget);
++            }
++            row
++        })
+@@ -239,0 +252,21 @@
++fn attach_schema(row: &mut Value, entry: &IndexEntry, registered: &[Tool], budget: &mut usize) {
++    let description = describe(
++        &DescribeArguments {
++            name: entry.tool.clone(),
++            detail: None,
++        },
++        registered,
++    )
++    .expect("index entries have registered descriptions");
++    let schema = &description["input_schema"];
++    let bytes = serde_json::to_vec(schema)
++        .expect("JSON schema encodes")
++        .len();
++    if bytes <= *budget {
++        *budget -= bytes;
++        row["input_schema"] = schema.clone();
++    } else {
++        row["schema_omitted"] = json!(true);
++    }
++}
++
+@@ -245,2 +278,12 @@
+-    let limit = arguments.limit.unwrap_or(DEFAULT_SEARCH_LIMIT);
+-    if limit == 0 || limit > MAX_SEARCH_LIMIT {
++    let schema_requested = arguments.include_schema.unwrap_or(false);
++    let maximum = if schema_requested {
++        3
++    } else {
++        MAX_SEARCH_LIMIT
++    };
++    let limit = arguments.limit.unwrap_or(if schema_requested {
++        1
++    } else {
++        DEFAULT_SEARCH_LIMIT
++    });
++    if limit == 0 || limit > maximum {
+@@ -248 +291 @@
+-            format!("limit must be between 1 and {MAX_SEARCH_LIMIT}"),
++            format!("limit must be between 1 and {maximum} for the requested detail"),
+@@ -632 +675,4 @@
+-             Follow up with catalog.describe for one tool's schema. Read-only, local to the server.",
++             For a specific operation, set include_schema=true to get its callable contract \
++             in the same reply. This defaults to one match, allows at most three, and includes \
++             at most 2 KiB of serialized schemas. If schema_omitted is true, use catalog.describe \
++             for the full contract. Read-only, local to the server.",
+@@ -650 +696,2 @@
+-                "offset": {"type": "integer", "minimum": 0}
++                "offset": {"type": "integer", "minimum": 0},
++                "include_schema": {"type":"boolean", "description":"Include bounded input schemas; limit defaults to 1 and may not exceed 3."}
+@@ -673 +720 @@
+-                        "execution_tool": {"type": "string"},
++            "execution_tool": {"type": "string"},
+@@ -680 +727,3 @@
+-                        "summary": {"type": "string"}
++                        "summary": {"type": "string"},
++                        "input_schema": {"type":"object"},
++                        "schema_omitted": {"type":"boolean"}
+@@ -769,2 +818,40 @@
+-    fn discovery_preserves_the_published_complete_bootstrap_schema() {
+-        let tools = crate::GiteaMcp::list_tools_payload().tools;
++    fn schema_rich_search_is_opt_in_bounded_and_preserves_full_describe() {
++        let plain = search_value(&SearchArguments {
++            query: Some("repoGet".into()),
++            ..SearchArguments::default()
++        });
++        assert!(matches(&plain)[0].get("input_schema").is_none());
++        let rich = search_value(&SearchArguments {
++            query: Some("repoGet".into()),
++            include_schema: Some(true),
++            ..SearchArguments::default()
++        });
++        let schema = &matches(&rich)[0]["input_schema"];
++        assert!(schema.is_object());
++        assert_eq!(
++            schema,
++            &Value::Object(
++                exposed_operation_by_id("repoGet")
++                    .unwrap()
++                    .input_schema
++                    .clone()
++            )
++        );
++        assert_eq!(rich["limit"], 1);
++        assert!(
++            search(
++                &SearchArguments {
++                    include_schema: Some(true),
++                    limit: Some(4),
++                    ..SearchArguments::default()
++                },
++                index_entries()
++            )
++            .is_err()
++        );
++        let bootstrap = search_value(&SearchArguments {
++            query: Some("repository.bootstrap".into()),
++            include_schema: Some(true),
++            ..SearchArguments::default()
++        });
++        assert_eq!(matches(&bootstrap)[0]["schema_omitted"], true);
+@@ -776 +863 @@
+-            &tools,
++            &crate::GiteaMcp::list_tools_payload().tools,
+@@ -780,8 +867,33 @@
+-        let published = tools
+-            .iter()
+-            .find(|tool| tool.name == "repository.bootstrap")
+-            .unwrap();
+-        assert_eq!(
+-            full["input_schema"],
+-            Value::Object((*published.input_schema).clone())
+-        );
++    }
++
++    #[test]
++    fn schema_rich_pages_keep_the_total_schema_budget_and_row_order() {
++        for offset in (0..index_entries().len()).step_by(3) {
++            let plain = search_value(&SearchArguments {
++                limit: Some(3),
++                offset: Some(offset),
++                ..SearchArguments::default()
++            });
++            let rich = search_value(&SearchArguments {
++                limit: Some(3),
++                offset: Some(offset),
++                include_schema: Some(true),
++                ..SearchArguments::default()
++            });
++            assert_eq!(
++                matches(&plain)
++                    .iter()
++                    .map(|row| &row["tool"])
++                    .collect::<Vec<_>>(),
++                matches(&rich)
++                    .iter()
++                    .map(|row| &row["tool"])
++                    .collect::<Vec<_>>()
++            );
++            let bytes: usize = matches(&rich)
++                .iter()
++                .filter_map(|row| row.get("input_schema"))
++                .map(|schema| serde_json::to_vec(schema).unwrap().len())
++                .sum();
++            assert!(bytes <= 2048);
++        }

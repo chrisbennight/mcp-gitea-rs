@@ -7,7 +7,7 @@ the instrument that decision requires.
 
 `run_eval.sh` provisions a disposable Gitea container (the same pinned image
 and pattern as the bootstrap live suite), starts this repository's server
-against it, and drives a headless `claude` agent through outcome-phrased tasks
+against it, and drives a headless Claude or Codex agent through outcome-phrased tasks
 drawn from PLAN.md's agent workloads — repository lifecycle, change review, CI
 operation, publication, access administration, fleet queries, triage, and
 content read. Each task seeds its own fixtures over the Gitea API and is
@@ -31,12 +31,44 @@ rather than as a choice a run could get wrong.
 `baselines/` are the decision evidence described below, and a run made today
 is not comparable with them.
 
-Explicitly opt-in: CI and `cargo test` never invoke this. It needs docker, a
-`claude` CLI able to run headless, and it spends real model tokens — bounded
+Explicitly opt-in: CI and `cargo test` never invoke this. It needs docker, an
+authenticated headless CLI, and it spends real model tokens — bounded
 by a per-task turn ceiling and wall-clock timeout. Everything it creates is
 disposable and torn down on exit; transcripts and the report are retained in
 the printed scratch directory. Transcripts are the telemetry input for any
 future workflow-tool consolidation.
+
+## Codex comparisons
+
+An authenticated Codex CLI is an alternative to Claude for fresh paired runs:
+
+```sh
+scripts/eval/run_eval.sh --agent codex --model gpt-6-astra --binary /absolute/path/to/baseline/mcp-gitea-rs
+scripts/eval/run_eval.sh --agent codex --model gpt-6-astra --binary /absolute/path/to/candidate/mcp-gitea-rs
+```
+
+Use the same harness files, model, task set, and CLI for both arms. The report
+records the executable digest, runner/wrapper digests, requested model, CLI
+version, verified outcomes, tool calls, errors, latency, and actual client token
+usage. Codex uses medium reasoning in both arms. Dollar cost is `null` when the
+ChatGPT-authenticated CLI does not supply it; unknown cost is not zero cost.
+Cached input tokens are reported separately by the client and must not be added
+to its total input-token field.
+
+The Codex runner uses saved client authentication without copying or inspecting
+its values. It ignores user configuration and project instructions, disables
+shell, web, apps and agent spawning, and connects only the disposable Gitea MCP.
+The working directory is temporary and session persistence is disabled. Tool
+arguments and results stay in memory; the retained per-task file contains only
+aggregate telemetry. A missing completion/usage event or any recorded command,
+file mutation, web search, or non-Gitea MCP call fails the task. Wall time and MCP
+call count are bounded, including incomplete runs.
+
+The implementation follows the installed client's behavior and official
+[non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode) and
+[MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+documentation. The baseline Claude reports are historical evidence, not a
+cross-model comparison with a new Codex run.
 
 ## Recorded baselines
 
@@ -60,14 +92,12 @@ Comparisons are honest only between runs with the same task set and model;
 the report records both. A task whose precondition is unmet is reported
 skipped with its reason, distinct from passed and failed; an errored agent
 run is a failed task with a visible reason, never silently dropped. The
-evaluated agent runs with only the Gitea MCP tools allowed, with every
-outcome-capable built-in explicitly denied, without the harness's own
-credentials in its environment, and under an isolated per-run configuration
-home seeded with the auth credential alone — so ambient settings, memory,
-plugins, and hooks cannot steer the measurement, and the CLI's own session
-persistence dies with the run instead of retaining raw tool results. The
-retained transcripts are redacted of token-shaped values before they touch
-disk, and the report records the driving CLI version.
+evaluated agent runs with only the Gitea MCP tools allowed and outcome-capable
+built-ins disabled, without the harness's own credentials in its environment.
+The Claude runner uses an isolated per-run configuration home seeded with its
+authentication; its retained transcripts redact token-shaped values before
+writing them. The Codex runner uses the isolation and aggregate-only telemetry
+described above. Both reports record the driving CLI version.
 
 ## Credentials
 

@@ -256,3 +256,23 @@ generator reads the published tool list and its schemas; the generated catalog
 under `generated/` carries the same operations with their risk classification
 and is the richer input, but it is a build artifact rather than a served
 surface.
+
+## Catalog caches contain contracts only
+
+Published normalized schemas, catalog lookup/index data and generated descriptions
+are immutable per build and may be shared across sessions. Generated validators
+compile lazily once per operation. Validation instances, credentials and operation
+results remain request- or session-owned and never enter these caches. Discovery
+reports an explicit callable tool alongside the existing operation name.
+
+An optional schema-rich search experiment preserved task success but increased
+input tokens, tool calls and tool errors in the fresh paired evaluation. It is
+not promoted. Search retains its summary contract and complete schemas remain
+available through describe. Complete bootstrap schemas remain published because
+hiding advanced fields would narrow the contract for validating clients. The
+[measurement report](docs/measurements/discovery-2026-09-25.md) records the rejected
+experiment separately from the cache and demonstrable discovery fixes.
+The smaller final candidate preserves task success and improves measured local
+search/describe latency and peak memory, but does not establish a model-token or
+tool-error improvement. Its publication rests on internal caching and the
+directly tested discovery defects, not a claim of a cheaper replacement surface.

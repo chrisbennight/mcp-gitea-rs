@@ -19,11 +19,15 @@ set -euo pipefail
 only=""
 record=""
 model=""
+agent="claude"
+binary=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --only) only="$2"; shift 2 ;;
     --record) record="$2"; shift 2 ;;
     --model) model="$2"; shift 2 ;;
+    --agent) agent="$2"; shift 2 ;;
+    --binary) binary="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -93,8 +97,15 @@ admin_token="$(docker exec "$container_name" \
   gitea admin user generate-access-token --username scope-admin \
   --token-name eval-admin --scopes all --raw | tr -d '[:space:]')"
 
-echo "building server" >&2
-cargo build --quiet --locked --package gitea-server --manifest-path "$repo_root/Cargo.toml"
+if [[ -z "$binary" ]]; then
+  echo "building server" >&2
+  cargo build --quiet --locked --package gitea-server --manifest-path "$repo_root/Cargo.toml"
+  binary="$repo_root/target/debug/mcp-gitea-rs"
+fi
+if [[ ! -x "$binary" ]]; then
+  echo "evaluation binary is not executable" >&2
+  exit 2
+fi
 
 server_port="$(python3 - <<'EOF'
 import socket
@@ -112,7 +123,7 @@ GITEA_MCP_TOKEN_PASSWORD="$password" \
 GITEA_MCP_GATEWAY_BEARER_CURRENT="$bearer" \
 GITEA_MCP_HOST="127.0.0.1" \
 GITEA_MCP_PORT="$server_port" \
-  "$repo_root/target/debug/mcp-gitea-rs" >"$scratch/server.log" 2>&1 &
+  "$binary" >"$scratch/server.log" 2>&1 &
 server_pid=$!
 
 for _ in $(seq 1 60); do
@@ -129,7 +140,7 @@ for _ in $(seq 1 60); do
 done
 curl --fail --silent --show-error "http://127.0.0.1:${server_port}/healthz" >/dev/null
 
-harness_args=(--output "$scratch/report.json" --transcripts "$scratch/transcripts")
+harness_args=(--output "$scratch/report.json" --transcripts "$scratch/transcripts" --agent "$agent")
 if [[ -n "$only" ]]; then
   harness_args+=(--only "$only")
 fi
@@ -138,6 +149,13 @@ if [[ -n "$model" ]]; then
 fi
 
 status=0
+binary_sha256="$(python3 - "$binary" <<'PYHASH'
+import hashlib,sys
+with open(sys.argv[1], "rb") as stream:
+    print(hashlib.file_digest(stream, "sha256").hexdigest())
+PYHASH
+)"
+GITEA_EVAL_BINARY_SHA256="$binary_sha256" \
 GITEA_EVAL_URL="$gitea_url" \
 GITEA_EVAL_ADMIN_TOKEN="$admin_token" \
 GITEA_EVAL_ADMIN_BASIC="scope-admin:${password}" \

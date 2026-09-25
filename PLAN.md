@@ -82,3 +82,13 @@ storage keeps active readers within the memory reservation, and complete
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for required verification and
 [DECISIONS.md](DECISIONS.md) for the architecture.
+
+## Discovery efficiency
+
+Reuse immutable schemas, validators, index text and lookup data. Return the
+actual callable tool and canonical operation identity in discovery, and cover
+common CI and PR vocabulary. Fresh paired model tasks and cold/warm loopback
+measurements evaluated optional bounded schemas in search. The experiment did
+not improve token or tool-error outcomes and was not promoted. Keep complete
+bootstrap contracts and every pinned operation reachable. Record the final
+caching and discovery fixes in the [measurement report](docs/measurements/discovery-2026-09-25.md).
