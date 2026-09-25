@@ -19,12 +19,30 @@ additional Gitea versions, Forgejo, ARM, and multi-user operation is not implied
 5. Record the image digest and CI link alongside the version's change notes.
    Consumers should deploy the digest and retain the prior digest for rollback.
 
-CI rejects a mismatched tag before building or contacting the registry. Existing
-revision tags are reused, and an existing version alias must contain the same
-manifest as its revision; a conflict fails publication. A transient error may be
+CI rejects a mismatched tag before building or looking up an image. The image job
+builds an OCI archive, loads its exact configuration into Docker, and runs the
+health and independent Python and TypeScript MCP checks against that image ID.
+It records the archive hash, manifest digest, source revision, and workflow run
+and attempt only after those checks pass. Publication downloads the artifact by
+its immutable ID from that same run, verifies the evidence, and copies it with
+Skopeo's digest-preservation option. It checks each published digest against the
+validated manifest and records the equality in the job summary. No image is
+rebuilt during publication.
+
+Existing revision tags are retrieved and subjected to the same client checks,
+so a rerun or version-tag push can reuse an immutable revision. An existing
+revision or version alias must have the validated manifest digest; a conflict
+fails before any publication. Pull-request jobs have read-only package access
+and their artifacts cannot enter the canonical push publication job. Missing,
+stale, or mismatched evidence fails closed. A transient error may be
 recovered by rerunning the original workflow, after checking its observed
 publication state. Never delete or move an existing version alias to make a run
 pass. A wrong release requires a new version.
+
+Digest-preserving transfers use the Ubuntu runner's Skopeo package and its
+[documented copy contract](https://github.com/containers/skopeo/blob/main/docs/skopeo-copy.1.md).
+The artifact binds validation within one trusted Actions run; it is not an
+independent image signature or external attestation.
 
 This procedure does not change repository or package visibility, create a
 GitHub Release automatically, or claim image signing/attestation. The source

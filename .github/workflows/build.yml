@@ -2,53 +2,46 @@ name: build
 
 on:
   workflow_call:
-    inputs:
-      publish:
-        type: boolean
-        default: false
+    outputs:
+      artifact_id:
+        value: ${{ jobs.image.outputs.artifact_id }}
 
 jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      artifact_id: ${{ steps.archive.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Validate release tag
-        run: python3 scripts/release_version.py
+      - name: Install image transfer tool
+        run: sudo apt-get update && sudo apt-get install -y skopeo
 
-      - name: Build image
+      - name: Authenticate read-only registry access
+        if: github.event_name == 'push' && github.repository == 'chrisbennight/mcp-gitea-rs'
         env:
-          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
-        run: |
-          set -euo pipefail
-          docker build --platform linux/amd64 \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --tag "${IMAGE}:sha-${GITHUB_SHA}" .
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io --username "$REGISTRY_USER" --password-stdin
 
-      - name: Verify image architecture
-        env:
-          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
-        run: |
-          set -euo pipefail
-          architecture="$(docker image inspect --format '{{.Architecture}}' "${IMAGE}:sha-${GITHUB_SHA}")"
-          test "$architecture" = amd64
+      - name: Prepare image artifact
+        id: candidate
+        run: python3 scripts/image_artifact.py prepare "$RUNNER_TEMP/validated-image"
 
       - name: Smoke health endpoint
         env:
-          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
-        run: |
-          set -euo pipefail
-          scripts/smoke-image.sh \
-            "${IMAGE}:sha-${GITHUB_SHA}" \
-            "mcp-gitea-rs-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          TEST_IMAGE: ${{ steps.candidate.outputs.image }}
+        run: scripts/smoke-image.sh "$TEST_IMAGE" "mcp-gitea-rs-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
       - name: Check independent MCP clients
-        if: ${{ !inputs.publish }}
         env:
-          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
+          TEST_IMAGE: ${{ steps.candidate.outputs.image }}
         run: |
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/mcp-python-client"
@@ -57,57 +50,31 @@ jobs:
             --no-audit --no-fund '@modelcontextprotocol/sdk@1.30.0'
           cp scripts/compatibility/typescript.mjs "$RUNNER_TEMP/mcp-typescript-client/"
           "$RUNNER_TEMP/mcp-python-client/bin/python" scripts/compatibility/run.py \
-            "${IMAGE}:sha-${GITHUB_SHA}" \
+            "$TEST_IMAGE" \
             --typescript-client "$RUNNER_TEMP/mcp-typescript-client/typescript.mjs"
 
-      - name: Publish image
-        if: inputs.publish
-        env:
-          IMAGE: ghcr.io/chrisbennight/mcp-gitea-rs
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record validated identity
+        run: python3 scripts/image_artifact.py record "$RUNNER_TEMP/validated-image"
+
+      - name: Retain tested artifact
+        id: archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validated-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/validated-image/image.oci.tar
+            ${{ runner.temp }}/validated-image/validated.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Clean up image builder
+        if: always()
         run: |
-          set -euo pipefail
-          release_tag=$(python3 scripts/release_version.py)
-          trap 'docker logout ghcr.io >/dev/null' EXIT
-          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io \
-            --username "$REGISTRY_USER" --password-stdin
-          revision="${IMAGE}:sha-${GITHUB_SHA}"
-          revision_created=0
-          if inspection=$(docker manifest inspect "$revision" 2>&1); then
-            echo "immutable revision already exists; refusing to rebind it"
-          elif [ "$inspection" = "manifest unknown" ] \
-            || [ "$inspection" = "no such manifest: $revision" ]; then
-            docker push "$revision"
-            revision_created=1
-          else
-            printf 'failed to determine whether immutable revision exists: %s\n' \
-              "$inspection" >&2
-            exit 1
+          if docker buildx inspect artifact-builder >/dev/null 2>&1; then
+            docker buildx rm artifact-builder
           fi
-          if [ "$GITHUB_REF" = refs/heads/main ]; then
-            if [ "$revision_created" = 0 ]; then
-              docker pull "$revision"
-              scripts/smoke-image.sh \
-                "$revision" \
-                "mcp-gitea-rs-remote-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-            fi
-            docker buildx imagetools create --prefer-index=false \
-              --tag "${IMAGE}:latest" "$revision"
-          fi
-          if [ -n "$release_tag" ]; then
-            release="${IMAGE}:${release_tag}"
-            if release_manifest=$(docker manifest inspect "$release" 2>&1); then
-              revision_manifest=$(docker manifest inspect "$revision")
-              if [ "$release_manifest" != "$revision_manifest" ]; then
-                echo "release tag already names different image contents" >&2
-                exit 1
-              fi
-            elif [ "$release_manifest" = "manifest unknown" ] \
-              || [ "$release_manifest" = "no such manifest: $release" ]; then
-              docker buildx imagetools create --prefer-index=false --tag "$release" "$revision"
-            else
-              printf 'failed to inspect release tag: %s\n' "$release_manifest" >&2
-              exit 1
-            fi
-          fi
+
+      - name: Remove registry credentials
+        if: always() && github.event_name == 'push' && github.repository == 'chrisbennight/mcp-gitea-rs'
+        run: skopeo logout ghcr.io

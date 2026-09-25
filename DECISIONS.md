@@ -24,6 +24,14 @@ the logging boundary.
 
 ## Published images target amd64 only
 
+Publication promotes an OCI archive whose configuration was loaded and tested
+by health and independent MCP clients. Validation records the immutable archive
+and manifest digests with the source revision and Actions run identity; the
+publish job checks this evidence and preserves and verifies the manifest digest.
+Build jobs have no package-write permission. Existing immutable revisions are
+retrieved and tested again rather than rebuilt or silently rebound. This is an
+artifact handoff within trusted CI, not an external signing or attestation system.
+
 The supported container platform is amd64, so CI and the local image builder always request
 `linux/amd64` and CI verifies the resulting image metadata before smoke testing
 or publication. Runner architecture must not silently change the production
