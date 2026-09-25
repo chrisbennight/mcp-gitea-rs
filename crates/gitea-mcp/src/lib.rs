@@ -1,5 +1,8 @@
 use std::fmt::Write as _;
-use std::{borrow::Cow, sync::Arc};
+use std::{
+    borrow::Cow,
+    sync::{Arc, LazyLock, OnceLock},
+};
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use gitea_api::{
@@ -494,23 +497,26 @@ impl GiteaMcp {
     /// than advisory.
     #[must_use]
     pub fn list_tools_payload() -> ListToolsResult {
-        let mut tools = Vec::with_capacity(13);
-        tools.push(server_version_tool());
-        tools.extend(access_token_tools());
-        tools.push(bootstrap::tool());
-        tools.push(repository_secret::tool());
-        tools.push(selection::tool());
-        tools.extend(discovery::tools());
-        tools.extend(lanes::tools());
-        let tools = tools
-            .into_iter()
-            .map(schema_portability::normalize_tool)
-            .collect();
-        ListToolsResult {
-            tools,
-            next_cursor: None,
-            meta: None,
-        }
+        static TOOLS: LazyLock<ListToolsResult> = LazyLock::new(|| {
+            let mut tools = Vec::with_capacity(13);
+            tools.push(server_version_tool());
+            tools.extend(access_token_tools());
+            tools.push(bootstrap::tool());
+            tools.push(repository_secret::tool());
+            tools.push(selection::tool());
+            tools.extend(discovery::tools());
+            tools.extend(lanes::tools());
+            let tools = tools
+                .into_iter()
+                .map(schema_portability::normalize_tool)
+                .collect();
+            ListToolsResult {
+                tools,
+                next_cursor: None,
+                meta: None,
+            }
+        });
+        TOOLS.clone()
     }
 
     /// Dispatch one registered tool.
@@ -770,7 +776,7 @@ impl GiteaMcp {
     fn discovery_result(&self, params: CallToolRequestParams) -> Result<CallToolResult, McpError> {
         if params.name == discovery::SEARCH_TOOL {
             let arguments = parse_arguments::<discovery::SearchArguments>(params.arguments)?;
-            let value = discovery::search(&arguments, &index_entries())?;
+            let value = discovery::search(&arguments, index_entries())?;
             return self.bound_value(discovery::SEARCH_TOOL, &value, false);
         }
         let arguments = parse_arguments::<discovery::DescribeArguments>(params.arguments)?;
@@ -1165,16 +1171,19 @@ fn fit_reply_to_ceiling(
 /// Tab-separated so it can be split without a parser, summary last because it
 /// is the only field that contains spaces.
 fn catalog_index() -> String {
-    let mut lines = String::with_capacity(64 * 1024);
-    lines.push_str("# tool\trisk\tdomain\trequired\tsummary\n");
-    for entry in index_entries() {
-        let _ = writeln!(
-            lines,
-            "{}\t{}\t{}\t{}\t{}",
-            entry.tool, entry.risk, entry.domain, entry.required, entry.summary,
-        );
-    }
-    lines
+    static INDEX: LazyLock<String> = LazyLock::new(|| {
+        let mut lines = String::with_capacity(64 * 1024);
+        lines.push_str("# tool\trisk\tdomain\trequired\tsummary\n");
+        for entry in index_entries() {
+            let _ = writeln!(
+                lines,
+                "{}\t{}\t{}\t{}\t{}",
+                entry.tool, entry.risk, entry.domain, entry.required, entry.summary,
+            );
+        }
+        lines
+    });
+    INDEX.clone()
 }
 
 pub(crate) struct IndexEntry {
@@ -1188,6 +1197,7 @@ pub(crate) struct IndexEntry {
     pub(crate) operation_id: Option<String>,
     pub(crate) administrative: bool,
     pub(crate) sensitive: bool,
+    pub(crate) search: discovery::SearchText,
 }
 
 /// One entry per registered tool, derived from the registry itself.
@@ -1245,7 +1255,12 @@ pub(crate) fn required_arguments(input_schema: &Map<String, Value>) -> String {
     columns.join(",")
 }
 
-pub(crate) fn index_entries() -> Vec<IndexEntry> {
+pub(crate) fn index_entries() -> &'static [IndexEntry] {
+    static ENTRIES: LazyLock<Vec<IndexEntry>> = LazyLock::new(build_index_entries);
+    &ENTRIES
+}
+
+fn build_index_entries() -> Vec<IndexEntry> {
     // Two sources, one rule: each row is derived from the object that defines
     // it. A published tool describes itself through its annotations, schema,
     // and metadata; a catalog operation describes itself through the same
@@ -1276,6 +1291,13 @@ pub(crate) fn index_entries() -> Vec<IndexEntry> {
                     .unwrap_or(false)
             };
             IndexEntry {
+                search: discovery::SearchText::new(
+                    &name,
+                    meta.and_then(|meta| meta.0.get("org.cacahuate/operationId"))
+                        .and_then(Value::as_str),
+                    tool.description.as_deref().unwrap_or_default(),
+                    None,
+                ),
                 operation_id: meta
                     .and_then(|meta| meta.0.get("org.cacahuate/operationId"))
                     .and_then(Value::as_str)
@@ -1299,6 +1321,12 @@ pub(crate) fn index_entries() -> Vec<IndexEntry> {
             .iter()
             .filter(|operation| operation.exposed && !operation.deprecated.is_deprecated())
             .map(|operation| IndexEntry {
+                search: discovery::SearchText::new(
+                    &operation.tool_name,
+                    Some(&operation.operation_id),
+                    &operation.summary,
+                    operation.agent_guidance.as_deref(),
+                ),
                 operation_id: Some(operation.operation_id.clone()),
                 administrative: operation.administrative,
                 sensitive: operation.secret_result,
@@ -1839,13 +1867,10 @@ pub(crate) fn generated_output_schema() -> Map<String, Value> {
 }
 
 fn validate_arguments(
-    operation: &OperationSpec,
+    operation: &'static OperationSpec,
     arguments: &Map<String, Value>,
 ) -> Result<(), McpError> {
-    let schema = Value::Object(operation.input_schema.clone());
-    let validator = jsonschema::draft4::options()
-        .build(&schema)
-        .map_err(|_| McpError::internal_error("generated tool schema is invalid", None))?;
+    let validator = operation_validator(operation)?;
     let instance = Value::Object(arguments.clone());
     validator.validate(&instance).map_err(|error| {
         let path = error.instance_path().as_str();
@@ -1858,6 +1883,32 @@ fn validate_arguments(
             None,
         )
     })
+}
+
+/// Only generated contracts are cached; validation instances remain request-local.
+fn operation_validator(
+    operation: &'static OperationSpec,
+) -> Result<&'static jsonschema::Validator, McpError> {
+    type CachedValidator = OnceLock<Result<jsonschema::Validator, ()>>;
+    static VALIDATORS: LazyLock<std::collections::HashMap<&str, CachedValidator>> =
+        LazyLock::new(|| {
+            operation_catalog()
+                .operations
+                .iter()
+                .map(|operation| (operation.operation_id.as_str(), OnceLock::new()))
+                .collect()
+        });
+    let invalid = || McpError::internal_error("generated tool schema is invalid", None);
+    let slot = VALIDATORS
+        .get(operation.operation_id.as_str())
+        .ok_or_else(invalid)?;
+    slot.get_or_init(|| {
+        jsonschema::draft4::options()
+            .build(&Value::Object(operation.input_schema.clone()))
+            .map_err(|_| ())
+    })
+    .as_ref()
+    .map_err(|()| invalid())
 }
 
 impl ServerHandler for GiteaMcp {
@@ -2133,6 +2184,36 @@ mod tests {
         assert!(named("repository.update_pull_request_branch"));
         assert!(named("user.list_actions_runners"));
         assert!(!named("user.get_user_runners"));
+    }
+
+    #[test]
+    fn immutable_catalog_state_is_shared_and_validation_keeps_requests_separate() {
+        let first = GiteaMcp::list_tools_payload();
+        let second = GiteaMcp::list_tools_payload();
+        for (first, second) in first.tools.iter().zip(&second.tools) {
+            assert!(Arc::ptr_eq(&first.input_schema, &second.input_schema));
+            if let (Some(first), Some(second)) = (&first.output_schema, &second.output_schema) {
+                assert!(Arc::ptr_eq(first, second));
+            }
+        }
+        assert!(std::ptr::eq(index_entries(), index_entries()));
+        let operation = gitea_api::catalog::exposed_operation_by_id("repoGet").unwrap();
+        assert!(std::ptr::eq(
+            operation_validator(operation).unwrap(),
+            operation_validator(operation).unwrap()
+        ));
+        let valid = json!({"owner":"fixture","repo":"fixture"})
+            .as_object()
+            .unwrap()
+            .clone();
+        assert!(validate_arguments(operation, &valid).is_ok());
+        let invalid = json!({"owner":"fixture","repo":"fixture","unexpected":"synthetic-secret"})
+            .as_object()
+            .unwrap()
+            .clone();
+        let error = validate_arguments(operation, &invalid).unwrap_err();
+        assert!(!error.to_string().contains("synthetic-secret"));
+        assert!(validate_arguments(operation, &valid).is_ok());
     }
 
     #[test]

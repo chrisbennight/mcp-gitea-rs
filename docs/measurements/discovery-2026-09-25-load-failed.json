@@ -1,0 +1,218 @@
+{
+  "agent": "codex",
+  "agent_cli": "codex-cli 0.153.4",
+  "binary_sha256": "d4057ed31b6a612998b8e4d9a1ed11a46003c9029d6a209aba08df51f33ff607",
+  "cost_unaccounted_tasks": 6,
+  "cost_usd_total": null,
+  "harness_sha256": "19be7d8e21ac8f6d062688355a7adc16c0a4562e138f211207927a7a44c92ac0",
+  "recorded_at": "2026-09-25T04:19:30Z",
+  "requested_model": "gpt-6-astra",
+  "results": [
+    {
+      "cost_basis": "ChatGPT-authenticated CLI does not report billed dollar cost",
+      "cost_usd": null,
+      "detail": "ok",
+      "forbidden_tool_used": false,
+      "model": "gpt-6-astra",
+      "outcome": "passed",
+      "success": true,
+      "task": "repository-lifecycle",
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "tool_names": {
+        "repository.bootstrap": 1
+      },
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 42368,
+        "input_tokens": 56233,
+        "output_tokens": 204,
+        "reasoning_output_tokens": 0
+      },
+      "wall_seconds": 27.6,
+      "workload": "repository lifecycle"
+    },
+    {
+      "cost_basis": "ChatGPT-authenticated CLI does not report billed dollar cost",
+      "cost_usd": null,
+      "detail": "ok",
+      "forbidden_tool_used": false,
+      "model": "gpt-6-astra",
+      "outcome": "passed",
+      "success": true,
+      "task": "change-review",
+      "tool_calls": 10,
+      "tool_errors": 0,
+      "tool_names": {
+        "api.destroy": 1,
+        "api.mutate": 1,
+        "api.read": 2,
+        "catalog.describe": 1,
+        "catalog.search": 5
+      },
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 198656,
+        "input_tokens": 221943,
+        "output_tokens": 537,
+        "reasoning_output_tokens": 0
+      },
+      "wall_seconds": 43.6,
+      "workload": "change review"
+    },
+    {
+      "cost_basis": "ChatGPT-authenticated CLI does not report billed dollar cost",
+      "cost_usd": null,
+      "detail": "ok",
+      "forbidden_tool_used": false,
+      "model": "gpt-6-astra",
+      "outcome": "passed",
+      "success": true,
+      "task": "publication",
+      "tool_calls": 7,
+      "tool_errors": 1,
+      "tool_names": {
+        "api.mutate": 1,
+        "api.read": 2,
+        "catalog.describe": 1,
+        "catalog.search": 3
+      },
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 80384,
+        "input_tokens": 106074,
+        "output_tokens": 421,
+        "reasoning_output_tokens": 0
+      },
+      "wall_seconds": 41.1,
+      "workload": "publication"
+    },
+    {
+      "cost_basis": "ChatGPT-authenticated CLI does not report billed dollar cost",
+      "cost_usd": null,
+      "detail": "ok",
+      "forbidden_tool_used": false,
+      "model": "gpt-6-astra",
+      "outcome": "passed",
+      "success": true,
+      "task": "access-administration",
+      "tool_calls": 10,
+      "tool_errors": 0,
+      "tool_names": {
+        "api.mutate": 3,
+        "api.read": 1,
+        "catalog.describe": 3,
+        "catalog.search": 3
+      },
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 166144,
+        "input_tokens": 185362,
+        "output_tokens": 474,
+        "reasoning_output_tokens": 0
+      },
+      "wall_seconds": 65.1,
+      "workload": "access and identity administration"
+    },
+    {
+      "detail": "seed crashed: timed out",
+      "outcome": "failed",
+      "success": false,
+      "task": "fleet-query",
+      "wall_seconds": 0.0,
+      "workload": "fleet queries"
+    },
+    {
+      "cost_basis": "ChatGPT-authenticated CLI does not report billed dollar cost",
+      "cost_usd": null,
+      "detail": "verifier crashed: timed out",
+      "forbidden_tool_used": false,
+      "model": "gpt-6-astra",
+      "outcome": "failed",
+      "success": false,
+      "task": "triage",
+      "tool_calls": 11,
+      "tool_errors": 3,
+      "tool_names": {
+        "api.destroy": 1,
+        "api.mutate": 1,
+        "api.read": 4,
+        "catalog.describe": 1,
+        "catalog.search": 4
+      },
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 305920,
+        "input_tokens": 337215,
+        "output_tokens": 858,
+        "reasoning_output_tokens": 17
+      },
+      "wall_seconds": 266.6,
+      "workload": "triage"
+    },
+    {
+      "detail": "seed crashed: timed out",
+      "outcome": "failed",
+      "success": false,
+      "task": "content-read",
+      "wall_seconds": 0.0,
+      "workload": "content read"
+    },
+    {
+      "detail": "seed crashed: timed out",
+      "outcome": "failed",
+      "success": false,
+      "task": "issue-thread",
+      "wall_seconds": 0.0,
+      "workload": "repository lifecycle"
+    },
+    {
+      "detail": "seed crashed: timed out",
+      "outcome": "failed",
+      "success": false,
+      "task": "ci-operation",
+      "wall_seconds": 0.0,
+      "workload": "CI operation"
+    },
+    {
+      "agent_error": "client error or incomplete token accounting",
+      "cost_basis": "ChatGPT-authenticated CLI does not report billed dollar cost",
+      "cost_usd": null,
+      "detail": "client error or incomplete token accounting",
+      "forbidden_tool_used": false,
+      "model": "gpt-6-astra",
+      "outcome": "failed",
+      "success": false,
+      "task": "token-lifecycle",
+      "tool_calls": 2,
+      "tool_errors": 1,
+      "tool_names": {
+        "access_token.create": 1,
+        "access_token.list": 1
+      },
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 34048,
+        "input_tokens": 77969,
+        "output_tokens": 218,
+        "reasoning_output_tokens": 0
+      },
+      "wall_seconds": 339.6,
+      "workload": "access and identity administration"
+    }
+  ],
+  "surface": "layered",
+  "tasks_passed": 4,
+  "tasks_skipped": 0,
+  "tasks_total": 10,
+  "tool_calls_total": 41,
+  "tool_errors_total": 5,
+  "usage_total": {
+    "cache_write_input_tokens": 0,
+    "cached_input_tokens": 827520,
+    "input_tokens": 984796,
+    "output_tokens": 2712,
+    "reasoning_output_tokens": 17
+  },
+  "wrapper_sha256": "a390e66a4aba542de6f291799093e1f5e0c9f7d59b0d5980c1f6a9d7d85b7085"
+}

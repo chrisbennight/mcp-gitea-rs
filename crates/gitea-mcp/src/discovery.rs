@@ -17,7 +17,10 @@
 //! results are deterministic for a given build and carry no side effects.
 
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock, OnceLock},
+};
 
 use gitea_api::catalog::{
     OperationRisk, OperationSpec, ParameterLocation, exposed_operation, exposed_operation_by_id,
@@ -29,6 +32,46 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::{IndexEntry, SENSITIVE_RESULT_META, json_object_schema, required_arguments};
+
+/// Normalized catalog text shared by searches, never session content.
+pub(crate) struct SearchText {
+    name: String,
+    operation_id: String,
+    description: String,
+}
+
+impl SearchText {
+    pub(crate) fn new(
+        name: &str,
+        operation_id: Option<&str>,
+        summary: &str,
+        guidance: Option<&str>,
+    ) -> Self {
+        Self {
+            name: name.to_lowercase(),
+            operation_id: operation_id.unwrap_or_default().to_lowercase(),
+            description: format!("{summary} {}", guidance.unwrap_or_default()).to_lowercase(),
+        }
+    }
+
+    fn alias_matches(&self, term: &str) -> Option<bool> {
+        match term {
+            "pr" | "prs" => Some(
+                self.description.contains("pull request") || self.name.contains("pull_request"),
+            ),
+            "ci" => {
+                Some(self.name.starts_with("actions.") || self.operation_id.contains("actions"))
+            }
+            _ => None,
+        }
+    }
+
+    fn name_matches(&self, term: &str, domain: &str) -> bool {
+        self.alias_matches(term).unwrap_or_else(|| {
+            self.name.contains(term) || self.operation_id.contains(term) || domain.contains(term)
+        })
+    }
+}
 
 pub const SEARCH_TOOL: &str = "catalog.search";
 pub const DESCRIBE_TOOL: &str = "catalog.describe";
@@ -241,6 +284,19 @@ fn validated_limit(arguments: &SearchArguments) -> Result<usize, McpError> {
 fn match_row(entry: &IndexEntry) -> Value {
     let mut row = Map::from_iter([
         ("tool".to_string(), json!(entry.tool)),
+        (
+            "execution_tool".to_string(),
+            json!(
+                entry
+                    .operation_id
+                    .as_deref()
+                    .and_then(exposed_operation_by_id)
+                    .map_or(entry.tool.as_str(), |operation| crate::lanes::lane_of(
+                        operation
+                    )
+                    .tool_name())
+            ),
+        ),
         ("risk".to_string(), json!(entry.risk)),
         ("domain".to_string(), json!(entry.domain)),
         ("administrative".to_string(), json!(entry.administrative)),
@@ -334,8 +390,33 @@ fn meta_bool(tool: &Tool, key: &str) -> bool {
 }
 
 fn describe_generated(spec: &OperationSpec, detail: DetailLevel) -> Value {
+    type Descriptions = OnceLock<(Value, Value)>;
+    static CACHE: LazyLock<HashMap<&str, Descriptions>> = LazyLock::new(|| {
+        operation_catalog()
+            .operations
+            .iter()
+            .map(|operation| (operation.operation_id.as_str(), OnceLock::new()))
+            .collect()
+    });
+    let (summary, full) = CACHE[spec.operation_id.as_str()].get_or_init(|| {
+        (
+            build_description(spec, DetailLevel::Summary),
+            build_description(spec, DetailLevel::Full),
+        )
+    });
+    match detail {
+        DetailLevel::Summary => summary.clone(),
+        DetailLevel::Full => full.clone(),
+    }
+}
+
+fn build_description(spec: &OperationSpec, detail: DetailLevel) -> Value {
     let mut result = Map::from_iter([
         ("tool".to_string(), json!(spec.tool_name)),
+        (
+            "execution_tool".to_string(),
+            json!(crate::lanes::lane_of(spec).tool_name()),
+        ),
         ("operation_id".to_string(), json!(spec.operation_id)),
         ("risk".to_string(), json!(risk_name(spec.risk))),
         (
@@ -391,6 +472,7 @@ fn describe_hand_written(tool: &Tool, detail: DetailLevel) -> Value {
     };
     let mut result = Map::from_iter([
         ("tool".to_string(), json!(tool.name)),
+        ("execution_tool".to_string(), json!(tool.name)),
         ("risk".to_string(), json!(risk)),
         (
             "domain".to_string(),
@@ -437,28 +519,23 @@ fn rank(query: &str, terms: &[&str], entry: &IndexEntry) -> Option<u8> {
     if terms.is_empty() {
         return Some(3);
     }
-    let tool = entry.tool.to_lowercase();
-    let operation_id = entry.operation_id.as_deref().map(str::to_lowercase);
-    let summary = entry.summary.to_lowercase();
+    let text = &entry.search;
     for term in terms {
-        let in_name = tool.contains(term)
-            || operation_id.as_deref().is_some_and(|id| id.contains(term))
-            || entry.domain.contains(term);
-        if !in_name && !summary.contains(term) {
+        let in_name = text.name_matches(term, &entry.domain);
+        // Short aliases are semantic matches, never substrings such as "property".
+        if !in_name && (text.alias_matches(term).is_some() || !text.description.contains(term)) {
             return None;
         }
     }
-    if tool == query || operation_id.as_deref() == Some(query) {
+    if text.name == query || text.operation_id == query {
         return Some(0);
     }
-    if tool.contains(query) {
+    if text.name.contains(query) && text.alias_matches(query).is_none() {
         return Some(1);
     }
-    let all_terms_in_name = terms.iter().all(|term| {
-        tool.contains(term)
-            || operation_id.as_deref().is_some_and(|id| id.contains(term))
-            || entry.domain.contains(term)
-    });
+    let all_terms_in_name = terms
+        .iter()
+        .all(|term| text.name_matches(term, &entry.domain));
     Some(if all_terms_in_name { 2 } else { 3 })
 }
 
@@ -551,8 +628,8 @@ fn search_tool() -> Tool {
         Cow::Borrowed(
             "Search the registered tool catalog by keyword, domain, risk, or administrative \
              flag. Every query term must match; results are index rows naming the tool, its \
-             risk, and its required arguments. Follow up with catalog.describe for one tool's \
-             schema. Read-only, local to the server.",
+             execution_tool, risk, and required arguments. CI and PR aliases are supported. \
+             Follow up with catalog.describe for one tool's schema. Read-only, local to the server.",
         ),
         Arc::new(json_object_schema(
             json!({
@@ -560,7 +637,7 @@ fn search_tool() -> Tool {
                     "type": "string",
                     "maxLength": MAX_QUERY_CHARS,
                     "description": "whitespace-separated terms matched against tool name, \
-                                    operation id, domain, and summary"
+                                    operation id, domain, summary, and guidance; CI means Actions and PR means pull request"
                 },
                 "domain": {
                     "type": "string",
@@ -593,6 +670,7 @@ fn search_tool() -> Tool {
                     "type": "object",
                     "properties": {
                         "tool": {"type": "string"},
+                        "execution_tool": {"type": "string"},
                         "operation_id": {"type": "string"},
                         "risk": {"type": "string"},
                         "domain": {"type": "string"},
@@ -602,7 +680,7 @@ fn search_tool() -> Tool {
                         "summary": {"type": "string"}
                     },
                     "required": [
-                        "tool", "risk", "domain", "administrative", "sensitive_result",
+                        "tool", "execution_tool", "risk", "domain", "administrative", "sensitive_result",
                         "required", "summary"
                     ],
                     "additionalProperties": false
@@ -651,6 +729,7 @@ fn describe_tool() -> Tool {
     tool.output_schema = Some(Arc::new(crate::displaceable_output_schema(
         json!({
             "tool": {"type": "string"},
+            "execution_tool": {"type": "string"},
             "operation_id": {"type": "string"},
             "risk": {"type": "string"},
             "domain": {"type": "string"},
@@ -675,7 +754,7 @@ fn describe_tool() -> Tool {
             "input_schema": {"type": "object"},
             "response_headers": {"type": "array", "items": {"type": "string"}}
         }),
-        &["tool", "risk", "domain"],
+        &["tool", "execution_tool", "risk", "domain"],
     )));
     tool.meta = Some(discovery_meta());
     tool
@@ -686,8 +765,91 @@ mod tests {
     use super::*;
     use crate::index_entries;
 
+    #[test]
+    fn discovery_preserves_the_published_complete_bootstrap_schema() {
+        let tools = crate::GiteaMcp::list_tools_payload().tools;
+        let full = describe(
+            &DescribeArguments {
+                name: "repository.bootstrap".into(),
+                detail: None,
+            },
+            &tools,
+        )
+        .unwrap();
+        assert!(full["input_schema"]["properties"]["branch_protections"].is_object());
+        let published = tools
+            .iter()
+            .find(|tool| tool.name == "repository.bootstrap")
+            .unwrap();
+        assert_eq!(
+            full["input_schema"],
+            Value::Object((*published.input_schema).clone())
+        );
+    }
+
+    #[test]
+    fn search_aliases_find_intended_operations_without_substring_noise() {
+        let ci = search_value(&SearchArguments {
+            query: Some("CI logs".into()),
+            ..SearchArguments::default()
+        });
+        assert!(
+            matches(&ci)
+                .iter()
+                .any(|row| row["operation_id"] == "downloadActionsRunJobLogs")
+        );
+        assert!(
+            matches(&ci)
+                .iter()
+                .all(|row| row["execution_tool"] == "api.read")
+        );
+        let prs = search_value(&SearchArguments {
+            query: Some("PR".into()),
+            limit: Some(100),
+            ..SearchArguments::default()
+        });
+        assert!(!matches(&prs).is_empty());
+        for row in matches(&prs) {
+            assert!(
+                row["summary"]
+                    .as_str()
+                    .unwrap()
+                    .to_lowercase()
+                    .contains("pull request")
+                    || row["tool"].as_str().unwrap().contains("pull_request")
+            );
+        }
+    }
+
+    #[test]
+    fn every_discovery_route_names_a_published_callable_tool() {
+        let tools = crate::GiteaMcp::list_tools_payload().tools;
+        for entry in index_entries() {
+            let row = match_row(entry);
+            let execution = row["execution_tool"].as_str().unwrap();
+            assert!(tools.iter().any(|tool| tool.name == execution));
+            if let Some(operation) = entry
+                .operation_id
+                .as_deref()
+                .and_then(exposed_operation_by_id)
+            {
+                assert_eq!(execution, crate::lanes::lane_of(operation).tool_name());
+                let described = describe(
+                    &DescribeArguments {
+                        name: operation.operation_id.clone(),
+                        detail: None,
+                    },
+                    &tools,
+                )
+                .unwrap();
+                assert_eq!(described["execution_tool"], execution);
+                assert_eq!(described["operation_id"], operation.operation_id);
+            }
+        }
+    }
+
     fn search_value(arguments: &SearchArguments) -> Value {
-        search(arguments, &index_entries()).expect("valid search")
+        search(arguments, index_entries()).expect("valid search")
     }
 
     fn matches(value: &Value) -> &Vec<Value> {
@@ -784,7 +946,7 @@ mod tests {
                     limit: Some(limit),
                     ..SearchArguments::default()
                 },
-                &entries,
+                entries,
             )
             .expect_err("limit outside the published range");
             assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
@@ -799,7 +961,7 @@ mod tests {
                 domain: Some("gitlab".to_string()),
                 ..SearchArguments::default()
             },
-            &entries,
+            entries,
         )
         .expect_err("unknown domain");
         assert!(error.message.contains("repository"));
@@ -808,7 +970,7 @@ mod tests {
                 risk: Some("harmless".to_string()),
                 ..SearchArguments::default()
             },
-            &entries,
+            entries,
         )
         .expect_err("unknown risk");
         assert!(error.message.contains("read, mutation, destructive"));
@@ -1013,7 +1175,7 @@ mod tests {
                 query: Some("q".repeat(MAX_QUERY_CHARS * 64)),
                 ..SearchArguments::default()
             },
-            &entries,
+            entries,
         )
         .expect_err("oversized query");
         assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
@@ -1022,7 +1184,7 @@ mod tests {
                 domain: Some("d".repeat(MAX_DOMAIN_CHARS * 64)),
                 ..SearchArguments::default()
             },
-            &entries,
+            entries,
         )
         .expect_err("oversized domain");
         assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);

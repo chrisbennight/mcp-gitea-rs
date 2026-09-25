@@ -1,0 +1,30 @@
+[
+  {
+    "run": 1,
+    "mode": "before",
+    "load_before": "15.26 22.66 44.79 22/1406 2606042",
+    "load_after": "15.32 22.55 44.63 21/1412 2607021",
+    "record": "discovery-2026-09-25-before-1.json"
+  },
+  {
+    "run": 2,
+    "mode": "after",
+    "load_before": "15.32 22.55 44.63 21/1412 2607021",
+    "load_after": "15.53 22.48 44.49 22/1434 2608601",
+    "record": "discovery-2026-09-25-after-1.json"
+  },
+  {
+    "run": 3,
+    "mode": "after",
+    "load_before": "15.53 22.48 44.49 24/1434 2608601",
+    "load_after": "16.13 22.49 44.37 14/1399 2609828",
+    "record": "discovery-2026-09-25-after-2.json"
+  },
+  {
+    "run": 4,
+    "mode": "before",
+    "load_before": "16.13 22.49 44.37 14/1399 2609828",
+    "load_after": "17.80 22.73 44.33 38/1416 2611117",
+    "record": "discovery-2026-09-25-before-2.json"
+  }
+]

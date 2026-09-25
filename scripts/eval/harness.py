@@ -798,9 +798,14 @@ def transcript_metrics(lines: list[str]) -> dict:
 
 
 def run_agent(
-    prompt: str, mcp_config: str, transcript_path: pathlib.Path, model: str | None = None
+    prompt: str, mcp_config: str, transcript_path: pathlib.Path, model: str | None = None,
+    agent: str = "claude",
 ) -> dict:
     """Run one headless agent task and return its transcript metrics."""
+    if agent == "codex":
+        import codex_agent
+        return codex_agent.run(prompt, mcp_config, transcript_path, model,
+                               TASK_TIMEOUT_SECONDS, MAX_TURNS)
     command = [
         "claude",
         "-p",
@@ -906,7 +911,10 @@ def main() -> int:
         default=None,
         help="model the agent runs; pin it so surface comparisons share one",
     )
+    parser.add_argument("--agent", choices=["claude", "codex"], default="claude")
     arguments = parser.parse_args()
+    if arguments.agent == "codex" and not arguments.model:
+        parser.error("--agent codex requires --model")
 
     gitea_url = os.environ["GITEA_EVAL_URL"]
     admin_token = os.environ["GITEA_EVAL_ADMIN_TOKEN"]
@@ -986,6 +994,7 @@ def main() -> int:
             str(mcp_config_path),
             transcripts / f"{task.id}.jsonl",
             model=arguments.model,
+            agent=arguments.agent,
         )
         elapsed = round(time.monotonic() - started, 1)
         if "agent_error" in metrics:
@@ -1028,14 +1037,21 @@ def main() -> int:
     # the parser changes it.
     import hashlib
 
-    report["harness_sha256"] = hashlib.sha256(
-        pathlib.Path(__file__).read_bytes()
-    ).hexdigest()
+    instrument = pathlib.Path(__file__).read_bytes()
+    if arguments.agent == "codex":
+        instrument += pathlib.Path(__file__).with_name("codex_agent.py").read_bytes()
+    report["harness_sha256"] = hashlib.sha256(instrument).hexdigest()
+    report["agent"] = arguments.agent
+    report["binary_sha256"] = os.environ.get("GITEA_EVAL_BINARY_SHA256")
+    report["requested_model"] = arguments.model
+    report["wrapper_sha256"] = hashlib.sha256(pathlib.Path(__file__).with_name("run_eval.sh").read_bytes()).hexdigest()
+    if report["cost_unaccounted_tasks"] and not any(result.get("cost_usd") is not None for result in results):
+        report["cost_usd_total"] = None
     # The client is part of the instrument: comparisons are honest only when
     # the CLI that drove both runs is known.
     try:
         report["agent_cli"] = subprocess.run(
-            ["claude", "--version"], capture_output=True, text=True, timeout=30, check=False
+            [arguments.agent, "--version"], capture_output=True, text=True, timeout=30, check=False
         ).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         # The version probe is ancillary; it must never discard the paid

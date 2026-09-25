@@ -1,0 +1,61 @@
+{
+  "binary_sha256": "4c59faa99c563a38fa69ef24851d5166438ec1192700bd73ae99a824197ea8b7",
+  "bootstrap_definition_bytes": 13342,
+  "cases": {
+    "describe": {
+      "first_rpc_json_bytes": 1486,
+      "first_seconds": 0.024043302983045578,
+      "warm_maximum_seconds": 0.03125003515742719,
+      "warm_median_seconds": 0.01310767896939069,
+      "warm_minimum_seconds": 0.00989168300293386,
+      "warm_rpc_json_bytes_max": 1487,
+      "warm_rpc_json_bytes_min": 1487
+    },
+    "search": {
+      "first_rpc_json_bytes": 612,
+      "first_seconds": 0.025310585973784328,
+      "warm_maximum_seconds": 0.022915092995390296,
+      "warm_median_seconds": 0.01620613655541092,
+      "warm_minimum_seconds": 0.014804292935878038,
+      "warm_rpc_json_bytes_max": 613,
+      "warm_rpc_json_bytes_min": 613
+    },
+    "tools_list": {
+      "first_rpc_json_bytes": 39800,
+      "first_seconds": 0.06672369712032378,
+      "warm_maximum_seconds": 0.029223632998764515,
+      "warm_median_seconds": 0.019241063972003758,
+      "warm_minimum_seconds": 0.015091613167896867,
+      "warm_rpc_json_bytes_max": 39801,
+      "warm_rpc_json_bytes_min": 39800
+    },
+    "validated_read": {
+      "first_rpc_json_bytes": 577,
+      "first_seconds": 0.02942322287708521,
+      "warm_maximum_seconds": 0.012949642958119512,
+      "warm_median_seconds": 0.007646092912182212,
+      "warm_minimum_seconds": 0.00447243801318109,
+      "warm_rpc_json_bytes_max": 579,
+      "warm_rpc_json_bytes_min": 578
+    }
+  },
+  "harness_sha256": "96dff027192dc96c585abc8355550b723975b9fa19d00e44fc8381c97c739c0f",
+  "health_ready_seconds": 0.27129718591459095,
+  "initialize_seconds": 0.010086429072543979,
+  "iterations": 30,
+  "memory_after_first_calls": {
+    "VmHWM_kib": 31408,
+    "VmRSS_kib": 31408
+  },
+  "memory_after_warm_calls": {
+    "VmHWM_kib": 33528,
+    "VmRSS_kib": 33528
+  },
+  "memory_at_readiness": {
+    "VmHWM_kib": 26652,
+    "VmRSS_kib": 26652
+  },
+  "published_definition_bytes": 21191,
+  "scope": "fresh process; loopback fake; debug build unless supplied otherwise",
+  "source_sha256": "9b9e159f48e841cc6c50d91fdac97d4e4d29fd32c4c6cd0d5fc3246ddd55e776"
+}

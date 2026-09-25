@@ -1,4 +1,7 @@
-use std::sync::OnceLock;
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, OnceLock},
+};
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -126,18 +129,28 @@ pub fn operation_catalog() -> &'static OperationCatalog {
 
 #[must_use]
 pub fn exposed_operation(tool_name: &str) -> Option<&'static OperationSpec> {
-    operation_catalog()
-        .operations
-        .iter()
-        .find(|operation| operation.exposed && operation.tool_name == tool_name)
+    static BY_NAME: LazyLock<HashMap<&str, &OperationSpec>> = LazyLock::new(|| {
+        operation_catalog()
+            .operations
+            .iter()
+            .filter(|operation| operation.exposed)
+            .map(|operation| (operation.tool_name.as_str(), operation))
+            .collect()
+    });
+    BY_NAME.get(tool_name).copied()
 }
 
 #[must_use]
 pub fn exposed_operation_by_id(operation_id: &str) -> Option<&'static OperationSpec> {
-    operation_catalog()
-        .operations
-        .iter()
-        .find(|operation| operation.exposed && operation.operation_id == operation_id)
+    static BY_ID: LazyLock<HashMap<&str, &OperationSpec>> = LazyLock::new(|| {
+        operation_catalog()
+            .operations
+            .iter()
+            .filter(|operation| operation.exposed)
+            .map(|operation| (operation.operation_id.as_str(), operation))
+            .collect()
+    });
+    BY_ID.get(operation_id).copied()
 }
 
 #[cfg(test)]
@@ -167,6 +180,21 @@ mod tests {
             .map(|operation| &operation.tool_name)
             .collect();
         assert_eq!(names.len(), catalog.operation_count);
+    }
+
+    #[test]
+    fn indexed_lookups_preserve_every_catalog_identity_and_exposure() {
+        for operation in &operation_catalog().operations {
+            for found in [
+                exposed_operation(&operation.tool_name),
+                exposed_operation_by_id(&operation.operation_id),
+            ] {
+                assert_eq!(found.is_some(), operation.exposed);
+                if let Some(found) = found {
+                    assert!(std::ptr::eq(found, operation));
+                }
+            }
+        }
     }
 
     #[test]
