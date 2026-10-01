@@ -84,8 +84,9 @@ pub fn lane_of(operation: &OperationSpec) -> Lane {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaneArguments {
+    #[serde(alias = "name", alias = "operation", alias = "tool")]
     pub operation_id: String,
-    #[serde(default)]
+    #[serde(default, alias = "args")]
     pub arguments: Map<String, Value>,
 }
 

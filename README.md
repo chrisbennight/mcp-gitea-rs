@@ -125,7 +125,7 @@ In your client's tool interface:
 1. Call `server.version` with `{}`. Expect a successful response containing
    the upstream Gitea version. This checks connectivity, not authenticated access.
 2. Call `catalog.search` with `{"query":"repository.get","limit":5}`.
-3. Call `catalog.describe` with `{"name":"repository.get","detail":"full"}`.
+3. Call `catalog.describe` with `{"operation_id":"repository.get","detail":"full"}`.
    Inspect the returned schema, then call `api.read` with the arguments below,
    replacing the owner and repository with a private repository accessible to
    the service account:

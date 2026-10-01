@@ -76,10 +76,7 @@ impl SearchText {
 pub const SEARCH_TOOL: &str = "catalog.search";
 pub const DESCRIBE_TOOL: &str = "catalog.describe";
 
-/// Most index rows one search reply carries, and the default when the caller
-/// does not choose. A page is a selection aid, not a transfer format; a caller
-/// that wants the whole surface reads the index resource instead.
-const MAX_SEARCH_LIMIT: usize = 100;
+/// Default page size when the caller does not choose.
 const DEFAULT_SEARCH_LIMIT: usize = 25;
 
 /// How many near-miss names an unknown `catalog.describe` argument reports.
@@ -121,6 +118,12 @@ pub struct SearchArguments {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DescribeArguments {
+    #[serde(
+        rename = "operation_id",
+        alias = "name",
+        alias = "operation",
+        alias = "tool"
+    )]
     pub name: String,
     pub detail: Option<DetailLevel>,
 }
@@ -243,11 +246,8 @@ pub fn search(arguments: &SearchArguments, entries: &[IndexEntry]) -> Result<Val
 /// matching touches them.
 fn validated_limit(arguments: &SearchArguments) -> Result<usize, McpError> {
     let limit = arguments.limit.unwrap_or(DEFAULT_SEARCH_LIMIT);
-    if limit == 0 || limit > MAX_SEARCH_LIMIT {
-        return Err(McpError::invalid_params(
-            format!("limit must be between 1 and {MAX_SEARCH_LIMIT}"),
-            None,
-        ));
+    if limit == 0 {
+        return Err(McpError::invalid_params("limit must be positive", None));
     }
     if let Some(risk) = arguments.risk.as_deref()
         && !matches!(risk, "read" | "mutation" | "destructive")
@@ -326,7 +326,7 @@ pub fn describe(arguments: &DescribeArguments, registered: &[Tool]) -> Result<Va
         // quadratic in this string, and nothing registered is anywhere near
         // this long.
         return Err(McpError::invalid_params(
-            format!("name exceeds {MAX_NAME_CHARS} characters"),
+            format!("operation_id exceeds {MAX_NAME_CHARS} characters"),
             None,
         ));
     }
@@ -646,7 +646,7 @@ fn search_tool() -> Tool {
                 },
                 "risk": {"type": "string", "enum": ["read", "mutation", "destructive"]},
                 "administrative": {"type": "boolean"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": MAX_SEARCH_LIMIT},
+                "limit": {"type": "integer", "minimum": 1},
                 "offset": {"type": "integer", "minimum": 0}
             }),
             &[],
@@ -708,7 +708,7 @@ fn describe_tool() -> Tool {
         ),
         Arc::new(json_object_schema(
             json!({
-                "name": {
+                "operation_id": {
                     "type": "string",
                     "maxLength": MAX_NAME_CHARS,
                     "description": "tool name such as repository.get, or upstream operation \
@@ -716,7 +716,7 @@ fn describe_tool() -> Tool {
                 },
                 "detail": {"type": "string", "enum": ["summary", "full"]}
             }),
-            &["name"],
+            &["operation_id"],
         )),
     )
     .with_annotations(
@@ -938,18 +938,27 @@ mod tests {
     }
 
     #[test]
-    fn out_of_range_limit_is_rejected() {
+    fn zero_limit_is_rejected_and_explicit_limits_are_honored() {
         let entries = index_entries();
-        for limit in [0, MAX_SEARCH_LIMIT + 1] {
-            let error = search(
+        let error = search(
+            &SearchArguments {
+                limit: Some(0),
+                ..SearchArguments::default()
+            },
+            entries,
+        )
+        .expect_err("zero limit");
+        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+        for limit in [1000, usize::MAX] {
+            let value = search(
                 &SearchArguments {
                     limit: Some(limit),
                     ..SearchArguments::default()
                 },
                 entries,
             )
-            .expect_err("limit outside the published range");
-            assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+            .unwrap();
+            assert_eq!(value["matches"].as_array().unwrap().len(), entries.len());
         }
     }
 
@@ -974,6 +983,30 @@ mod tests {
         )
         .expect_err("unknown risk");
         assert!(error.message.contains("read, mutation, destructive"));
+    }
+
+    #[test]
+    fn describe_identifier_spellings_share_one_published_contract() {
+        let registered = crate::GiteaMcp::list_tools_payload().tools;
+        for field in ["operation_id", "name", "operation", "tool"] {
+            let arguments: DescribeArguments =
+                serde_json::from_value(json!({field:"repoGet"})).unwrap();
+            assert_eq!(
+                describe(&arguments, &registered).unwrap()["operation_id"],
+                "repoGet"
+            );
+        }
+        assert!(
+            serde_json::from_value::<DescribeArguments>(
+                json!({"operation_id":"repoGet","name":"repoDelete"}),
+            )
+            .is_err()
+        );
+        let schema = describe_tool().input_schema;
+        assert!(schema["properties"].get("operation_id").is_some());
+        for field in ["name", "operation", "tool"] {
+            assert!(schema["properties"].get(field).is_none());
+        }
     }
 
     #[test]

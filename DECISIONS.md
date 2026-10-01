@@ -267,6 +267,12 @@ surface.
 
 ## Catalog caches contain contracts only
 
+Discovery and execution publish `operation_id` as the operation selector.
+Alternate input spellings are accepted during deserialization and omitted from
+published schemas and success guidance. Search page size and selection counts
+keep defaults and lower bounds; response byte budgets determine how much
+evidence fits, with requested size and continuation reported to the caller.
+
 Published normalized schemas, catalog lookup/index data and generated descriptions
 are immutable per build and may be shared across sessions. Generated validators
 compile lazily once per operation. Validation instances, credentials and operation
