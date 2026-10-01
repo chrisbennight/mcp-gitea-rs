@@ -50,9 +50,9 @@ pub fn tool() -> rmcp::model::Tool {
                 "uri":{"type":"string","minLength":1,"maxLength":512},
                 "mode":{"type":"string","enum":["text","search","json"]},
                 "offset":{"type":"integer","minimum":0,"description":"UTF-8 byte offset for text/search, or row offset for a JSON array."},
-                "limit":{"type":"integer","minimum":1,"maximum":4096,"description":"Maximum selection bytes for text/search, or rows (at most 100) for JSON; the reply byte bound may reduce this."},
+                "limit":{"type":"integer","minimum":1,"description":"Maximum selection bytes for text/search, or rows for JSON; the reply byte bound may reduce this."},
                 "text":{"type":"string","minLength":1,"maxLength":128,"description":"Search-only literal, at most 128 UTF-8 bytes; no regular expressions."},
-                "context_lines":{"type":"integer","minimum":0,"maximum":10},
+                "context_lines":{"type":"integer","minimum":0},
                 "pointer":{"type":"string","maxLength":512,"description":"JSON-only pointer, at most 512 UTF-8 bytes; empty selects the root."},
                 "fields":{"type":"array","maxItems":16,"items":{"type":"string","maxLength":128},"description":"Exact JSON object field names, each at most 128 UTF-8 bytes."}
             }),
@@ -73,6 +73,7 @@ pub fn tool() -> rmcp::model::Tool {
     tool.output_schema = Some(Arc::new(crate::json_object_schema(
         json!({
             "uri":{"type":"string"},"source_bytes":{"type":"integer","minimum":0},
+            "requested_limit":{"type":"integer","minimum":1,"description":"Requested bytes or rows before applying the reply byte budget; actual selection is reported by start, end, and unit."},
             "selection":{"type":"object","properties":{
                 "data":{},"start":{"type":"integer","minimum":0},"end":{"type":"integer","minimum":0},
                 "unit":{"type":"string","enum":["bytes","rows"]},
@@ -81,7 +82,7 @@ pub fn tool() -> rmcp::model::Tool {
                 "matched":{"type":"boolean"},"total_rows":{"type":"integer","minimum":0}
             },"required":["data","start","end","unit","next_offset","complete","truncated"],"additionalProperties":false}
         }),
-        &["uri", "source_bytes", "selection"],
+        &["uri", "source_bytes", "requested_limit", "selection"],
     )));
     tool
 }
@@ -89,10 +90,7 @@ pub fn tool() -> rmcp::model::Tool {
 impl Arguments {
     pub fn validate(&self) -> Result<(), McpError> {
         if self.uri.len() > 512
-            || self
-                .limit
-                .is_some_and(|limit| limit == 0 || limit > MAX_WINDOW_BYTES)
-            || self.context_lines.is_some_and(|lines| lines > 10)
+            || self.limit == Some(0)
             || self
                 .text
                 .as_ref()
@@ -115,11 +113,7 @@ impl Arguments {
                     && self.fields.is_none()
             }
             Mode::Search => self.text.is_some() && self.pointer.is_none() && self.fields.is_none(),
-            Mode::Json => {
-                self.text.is_none()
-                    && self.context_lines.is_none()
-                    && self.limit.is_none_or(|limit| limit <= 100)
-            }
+            Mode::Json => self.text.is_none() && self.context_lines.is_none(),
         };
         if !valid {
             return Err(invalid(
@@ -136,10 +130,11 @@ pub fn select(
     ceiling: usize,
 ) -> Result<CallToolResult, McpError> {
     arguments.validate()?;
-    let mut limit = arguments.limit.unwrap_or(match arguments.mode {
+    let requested_limit = arguments.limit.unwrap_or(match arguments.mode {
         Mode::Json => 20,
         _ => MAX_WINDOW_BYTES,
     });
+    let mut limit = requested_limit.min(resource.body.len().max(1));
     let parsed = if matches!(arguments.mode, Mode::Json) {
         if !crate::declares_json(&resource.content_type) || resource.body.len() > MAX_JSON_BYTES {
             return Err(invalid(
@@ -158,8 +153,7 @@ pub fn select(
             Mode::Text | Mode::Search => text_selection(&resource.body, arguments, limit)?,
             Mode::Json => json_selection(parsed.as_ref().expect("parsed JSON"), arguments, limit)?,
         };
-        let value =
-            json!({"uri":resource.uri,"source_bytes":resource.body.len(),"selection":selected});
+        let value = json!({"uri":resource.uri,"source_bytes":resource.body.len(),"requested_limit":requested_limit,"selection":selected});
         let mut result = CallToolResult::structured(value);
         result.meta = crate::result_meta(resource.sensitive, None);
         result.is_error = Some(false);
@@ -355,6 +349,61 @@ mod tests {
         assert_eq!(first["selection"]["data"], "match\n");
         let second = select(&resource,&arguments(json!({"uri":resource.uri,"mode":"search","text":"match","context_lines":1,"offset":first["selection"]["next_offset"]}))).unwrap().structured_content.unwrap();
         assert_eq!(second["selection"]["data"], "three\nmatch\nfive\n");
+    }
+
+    #[test]
+    fn large_explicit_limits_and_context_are_bounded_by_the_response() {
+        let resource = resource(b"line\n".repeat(2000), "text/plain");
+        for limit in [4442, usize::MAX] {
+            let result = select(
+                &resource,
+                &arguments(json!({"uri":resource.uri,"mode":"text","limit":limit})),
+            )
+            .unwrap();
+            assert!(serde_json::to_vec(&result).unwrap().len() <= MAX_REPLY_BYTES);
+            let value = result.structured_content.unwrap();
+            assert_eq!(value["requested_limit"], limit);
+            assert!(value["selection"]["next_offset"].is_number());
+            assert_eq!(value["selection"]["unit"], "bytes");
+            let schema = Value::Object((*tool().output_schema.unwrap()).clone());
+            assert!(jsonschema::validator_for(&schema).unwrap().is_valid(&value));
+        }
+        let result = select(
+            &resource,
+            &arguments(json!({
+                "uri":resource.uri,"mode":"search","text":"line",
+                "limit":4442,"context_lines":15,
+            })),
+        )
+        .unwrap();
+        assert!(
+            result.structured_content.unwrap()["selection"]["data"]
+                .as_str()
+                .unwrap()
+                .lines()
+                .count()
+                > 10
+        );
+        let rows = self::resource(
+            serde_json::to_vec(&(0..200).collect::<Vec<_>>()).unwrap(),
+            "application/json",
+        );
+        let result = select(
+            &rows,
+            &arguments(json!({"uri":rows.uri,"mode":"json","limit":1000})),
+        )
+        .unwrap()
+        .structured_content
+        .unwrap();
+        assert_eq!(result["selection"]["data"].as_array().unwrap().len(), 200);
+        assert_eq!(result["selection"]["complete"], true);
+        for field in ["limit", "context_lines"] {
+            assert!(
+                tool().input_schema["properties"][field]
+                    .get("maximum")
+                    .is_none()
+            );
+        }
     }
 
     #[test]

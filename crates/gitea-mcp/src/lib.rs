@@ -2570,9 +2570,9 @@ mod tests {
 
         let request =
             CallToolRequestParams::new(lanes::READ_TOOL).with_arguments(Map::from_iter([
-                ("operation_id".to_string(), json!("repository.get")),
+                ("tool".to_string(), json!("repository.get")),
                 (
-                    "arguments".to_string(),
+                    "args".to_string(),
                     json!({"owner": "alice", "repo": "demo"}),
                 ),
             ]));
@@ -2604,7 +2604,7 @@ mod tests {
 
         let error = mcp
             .invoke_tool(CallToolRequestParams::new(lanes::READ_TOOL).with_arguments(
-                Map::from_iter([("operation_id".to_string(), json!("repository.delete"))]),
+                Map::from_iter([("name".to_string(), json!("repository.delete"))]),
             ))
             .await
             .expect_err("a destructive operation must not run on the read lane");
@@ -2614,7 +2614,7 @@ mod tests {
         let error = mcp
             .invoke_tool(
                 CallToolRequestParams::new(lanes::MUTATE_TOOL).with_arguments(Map::from_iter([(
-                    "operation_id".to_string(),
+                    "operation".to_string(),
                     json!("adminCreateUser"),
                 )])),
             )

@@ -38,6 +38,11 @@ the described arguments to the indicated lane. The existing `tool` field remains
 the operation's discovery name. Hand-written tools name themselves as the
 execution tool.
 
+`catalog.describe` and the execution lanes publish `operation_id` as their
+selector. They also accept `name`, `operation`, and `tool` for that field;
+lanes accept `args` for `arguments`. These alternate spellings are omitted
+from discovery, and supplying more than one spelling is rejected.
+
 Search recognizes `CI` as Actions and `PR`/`PRs` as pull requests. These complete
 terms use reviewed meanings, so `PR` does not match unrelated substrings such as
 “property.” Generated agent guidance is searchable alongside names and summaries.
@@ -105,11 +110,12 @@ whole result. Text mode accepts a UTF-8 byte offset and a byte limit. Search mod
 finds the next literal match with bounded surrounding lines; `next_offset`
 continues after that match, so repeated calls make progress even when context
 overlaps. JSON mode accepts an RFC 6901 pointer, an array row offset, and exact
-object field names. It supports JSON payloads up to 2 MiB and at most 100 rows
-per call. Text and search inspect at most the retained object limit. No query
+object field names. It supports JSON payloads up to 2 MiB. Explicit positive
+limits and nonnegative context-line counts have no request ceiling; response
+byte budgets can shorten the selection. Text and search inspect at most the retained object limit. No query
 language or regular expression interpreter is available.
 
-Selections include source size, selected range and units, continuation,
+Selections include the requested limit, source size, selected range and units, continuation,
 completeness, and truncation. The serialized MCP reply stays within 8 KiB and the
 configured context ceiling, including compatibility text and sensitivity
 metadata. A row too large to fit requires a narrower pointer or field selection.
