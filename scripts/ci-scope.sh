@@ -64,7 +64,7 @@ else
     esac
     case "$path" in
       crates/*/tests/*|crates/*/benches/*|crates/*/examples/*|crates/*/*.md) ;;
-      Cargo.toml|Cargo.lock|rust-toolchain.toml|rust-toolchain|crates/*|generated/*|Dockerfile|.dockerignore|scripts/release_version.py|LICENSE|THIRD_PARTY_NOTICES.md) publish=true ;;
+      Cargo.toml|Cargo.lock|rust-toolchain.toml|rust-toolchain|crates/*|generated/*|Dockerfile|.dockerignore|scripts/release_version.py|scripts/dependency_inventory.py|LICENSE|THIRD_PARTY_NOTICES.md) publish=true ;;
     esac
     if [[ ! -e "$path" ]]; then docs=true; fi
   done <"$changed_files"
