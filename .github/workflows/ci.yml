@@ -32,7 +32,7 @@ jobs:
     needs: [test, image, advisories]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.repository == 'chrisbennight/mcp-gitea-rs' && needs.image.outputs.publish_selected == 'true'
     concurrency:
-      group: mcp-gitea-rs-image-publication
+      group: mcp-gitea-rs-image-publication-${{ github.ref }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -53,7 +53,38 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y skopeo
       - name: Verify publication evidence
         run: python3 scripts/image_artifact.py verify "$RUNNER_TEMP/validated-image"
+      - name: Read current main for publication
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: .ci/publication-main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recheck publication inputs against current main
+        id: release_scope
+        run: |
+          set -euo pipefail
+          current=true
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            qualified_root="$PWD"
+            cd .ci/publication-main
+            git cat-file -e "$GITHUB_SHA^{commit}"
+            current=false
+            if git merge-base --is-ancestor "$GITHUB_SHA" HEAD; then
+              scope_file=$(mktemp)
+              trap 'rm -f "$scope_file"' EXIT
+              GITHUB_EVENT_NAME=push BASE_SHA="$GITHUB_SHA" GITHUB_OUTPUT="$scope_file" \
+                bash "$qualified_root/scripts/ci-scope.sh"
+              if grep -Fxq 'publish=false' "$scope_file"; then current=true; fi
+            fi
+          fi
+          printf 'current=%s\n' "$current" >> "$GITHUB_OUTPUT"
+          if [[ "$current" == false ]]; then echo 'SKIP: newer main changes application inputs'; fi
+
       - name: Publish tested artifact
+        if: (true) && steps.release_scope.outputs.current == 'true'
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
