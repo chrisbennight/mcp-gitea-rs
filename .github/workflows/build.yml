@@ -35,29 +35,29 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bash scripts/ci-scope.sh
       - name: Install image transfer tool
-        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')
+        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')
         run: sudo apt-get update && sudo apt-get install -y skopeo
 
       - name: Authenticate read-only registry access
-        if: (steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')) && (github.event_name == 'push' && github.repository == 'chrisbennight/mcp-gitea-rs')
+        if: (steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')) && (github.event_name == 'push' && github.repository == 'chrisbennight/mcp-gitea-rs')
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
         run: printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io --username "$REGISTRY_USER" --password-stdin
 
       - name: Prepare image artifact
-        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')
+        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')
         id: candidate
         run: python3 scripts/image_artifact.py prepare "$RUNNER_TEMP/validated-image"
 
       - name: Smoke health endpoint
-        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')
+        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')
         env:
           TEST_IMAGE: ${{ steps.candidate.outputs.image }}
         run: scripts/smoke-image.sh "$TEST_IMAGE" "mcp-gitea-rs-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
       - name: Check independent MCP clients
-        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')
+        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')
         env:
           TEST_IMAGE: ${{ steps.candidate.outputs.image }}
         run: |
@@ -72,11 +72,11 @@ jobs:
             --typescript-client "$RUNNER_TEMP/mcp-typescript-client/typescript.mjs"
 
       - name: Record validated identity
-        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')
+        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')
         run: python3 scripts/image_artifact.py record "$RUNNER_TEMP/validated-image"
 
       - name: Retain tested artifact
-        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')
+        if: steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')
         id: archive
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -96,5 +96,5 @@ jobs:
           if [[ -n "$CANDIDATE_TAG" ]]; then docker image rm "$CANDIDATE_TAG"; fi
 
       - name: Remove registry credentials
-        if: (steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true')) && (always() && github.event_name == 'push' && github.repository == 'chrisbennight/mcp-gitea-rs')
+        if: (steps.scope.outputs.image == 'true' && (github.event_name != 'push' || steps.scope.outputs.publish != 'true' || github.repository != 'chrisbennight/mcp-gitea-rs')) && (always() && github.event_name == 'push' && github.repository == 'chrisbennight/mcp-gitea-rs')
         run: skopeo logout ghcr.io

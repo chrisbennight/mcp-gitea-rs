@@ -58,7 +58,7 @@ else
     esac
 
     case "$path" in
-      crates/gitea-api/src/*|crates/gitea-api/examples/token_scope_smoke.rs|crates/gitea-mcp/src/lib.rs|crates/gitea-mcp/src/bootstrap*|crates/gitea-mcp/src/owners.rs|crates/gitea-mcp/src/lanes.rs|crates/gitea-mcp/src/discovery.rs|crates/gitea-mcp/examples/bootstrap_smoke.rs)
+      crates/gitea-api/src/*|crates/gitea-api/examples/token_scope_smoke.rs|crates/gitea-mcp/src/lib.rs|crates/gitea-mcp/src/bootstrap*|crates/gitea-mcp/src/owners.rs|crates/gitea-mcp/src/lanes.rs|crates/gitea-mcp/src/discovery.rs|crates/gitea-mcp/src/resources.rs|crates/gitea-mcp/examples/bootstrap_smoke.rs)
         integration=true ;;
       scripts/generate_api.py) catalog=true ;;
     esac
