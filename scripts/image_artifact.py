@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import tomllib
 
@@ -106,15 +107,22 @@ def prepare(directory):
         command(["skopeo", "copy", "--preserve-digests", "docker://" + IMAGE + "@" + existing,
                  "oci-archive:" + str(archive)])
     else:
-        command(["docker", "buildx", "create", "--name", "artifact-builder", "--driver", "docker-container", "--use"])
-        command(["docker", "buildx", "build", "--platform", "linux/amd64", "--provenance=false", "--sbom=false",
-                 "--label", "org.opencontainers.image.revision=" + ctx["GITHUB_SHA"],
-                 "--output", "type=oci,dest=" + str(archive), "."])
+        builder = "mcp-gitea-" + secrets.token_hex(8)
+        command(["docker", "buildx", "create", "--name", builder, "--driver", "docker-container"])
+        try:
+            command(["docker", "buildx", "build", "--builder", builder, "--platform", "linux/amd64",
+                     "--provenance=false", "--sbom=false",
+                     "--label", "org.opencontainers.image.revision=" + ctx["GITHUB_SHA"],
+                     "--output", "type=oci,dest=" + str(archive), "."])
+        finally:
+            command(["docker", "buildx", "rm", builder])
     evidence = identity(archive, ctx)
     if existing and evidence["manifest_digest"] != existing:
         raise ArtifactError("existing revision changed while preparing artifact")
-    local_tag = "mcp-gitea-rs:validated-candidate"
+    local_tag = "mcp-gitea-rs:validated-" + secrets.token_hex(8)
     command(["skopeo", "copy", "oci-archive:" + str(archive), "docker-daemon:" + local_tag])
+    with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+        output.write("candidate_tag=" + local_tag + "\n")
     loaded = command(["docker", "image", "inspect", "--format", "{{.Id}}", local_tag], capture=True).decode().strip()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", loaded):
         raise ArtifactError("invalid loaded image identity")

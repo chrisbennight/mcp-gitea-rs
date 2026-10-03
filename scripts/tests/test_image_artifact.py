@@ -70,7 +70,8 @@ class ImageArtifactTests(unittest.TestCase):
                     self.assertFalse((directory / "candidate.json").exists())
                 else:
                     artifact.prepare(directory)
-                    self.assertEqual(output.read_text(), "image=" + image_id + "\n")
+            outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+            self.assertEqual(outputs["image"], image_id)
 
     def test_missing_stale_and_incomplete_evidence_fail_before_publication(self):
         for change in ["missing", "run", "attempt", "source", "checks", "manifest"]:

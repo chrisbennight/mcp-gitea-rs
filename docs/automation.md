@@ -5,14 +5,21 @@ pull requests, main/tag pushes, and manual dispatch. Validation covers formattin
 Clippy, Rust tests/docs, catalog regeneration, Python checks, disposable Gitea
 integration tests, and amd64 image health and independent MCP client checks. Jobs have bounded run times.
 
-Only a push to main or a `v*` tag in `chrisbennight/mcp-gitea-rs` can publish. The publication
+Checks select the changed inputs. Markdown runs documentation checks; Rust tests
+run without building an image. Runtime and image packaging changes select the
+image, and changes to the Gitea API, bootstrap, or integration scripts select the
+disposable Gitea tests. OpenAPI changes select catalog regeneration. Manual runs
+and version tags select all checks; missing Git history fails selection. Existing
+check names remain required even when their costly steps are skipped.
+
+Only a push to main with image inputs or a `v*` tag in `chrisbennight/mcp-gitea-rs` can publish. The publication
 job has `packages: write`; tests and PR image jobs have only `contents: read`.
 The workflow uses `GITHUB_TOKEN`, not a stored registry PAT or private action.
 Images carry the repository source label so GHCR can associate their access.
 The source repository is public. GHCR package access is administered separately;
 a build or release does not change package visibility.
 
-A successful main build publishes `sha-<full commit>` and advances `latest`.
+A successful main image build publishes `sha-<full commit>` and advances `latest`.
 A stable `vMAJOR.MINOR.PATCH` tag matching the workspace version publishes its
 revision and version alias without advancing `latest`. An
 existing revision is not overwritten; when reused for latest it is pulled and
@@ -30,7 +37,7 @@ repository settings; a committed configuration does not establish those account
 settings.
 
 The dependency-advisory workflow checks locked public Cargo packages against
-OSV on each CI run and weekly. Publication waits for that check as well as the
+OSV when the locked graph or advisory workflow changes and weekly. Publication waits for that check as well as the
 test and image jobs. An unavailable service, incomplete response, or unsupported
 private/git dependency fails the check rather than claiming a clean scan. It
 sends only public package names and versions; GitHub vulnerability alerts remain
