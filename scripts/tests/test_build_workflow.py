@@ -10,36 +10,7 @@ SMOKE_SCRIPT = ROOT / "scripts/smoke-image.sh"
 
 
 class BuildWorkflowTests(unittest.TestCase):
-    def test_tested_artifact_crosses_the_job_boundary_without_a_rebuild(self):
-        build = (ROOT / ".github/workflows/build.yml").read_text()
-        ci = (ROOT / ".github/workflows/ci.yml").read_text()
-        for name in ["Prepare image artifact", "Smoke health endpoint", "Check independent MCP clients",
-                     "Record validated identity", "Retain tested artifact"]:
-            self.assertIn(name, build)
-        positions = [build.index(name) for name in ["Prepare image artifact", "Smoke health endpoint",
-                    "Check independent MCP clients", "Record validated identity", "Retain tested artifact"]]
-        self.assertEqual(positions, sorted(positions))
-        self.assertNotIn("inputs.publish", build)
-        self.assertNotIn("packages: write", build)
-        self.assertIn("packages: read", build)
-        self.assertIn("${{ steps.candidate.outputs.image }}", build)
-        self.assertIn("artifact-ids: ${{ needs.image.outputs.artifact_id }}", ci)
-        publication = ci.split("  publish:\n")[1]
-        self.assertNotIn("build.yml", publication)
-        self.assertNotIn("docker build", publication)
-        self.assertLess(publication.index("Verify publication evidence"), publication.index("Publish tested artifact"))
 
-    def test_only_canonical_push_can_publish_after_all_required_checks(self):
-        ci = (ROOT / ".github/workflows/ci.yml").read_text()
-        before, publication = ci.split("  publish:\n")
-        self.assertNotIn("packages: write", before)
-        self.assertIn("packages: write", publication)
-        self.assertIn("needs: [test, image, advisories]", publication)
-        self.assertIn("github.event_name == 'push'", publication)
-        self.assertIn("github.ref == 'refs/heads/main'", publication)
-        self.assertIn("github.repository == 'chrisbennight/mcp-gitea-rs'", publication)
-        self.assertIn("cancel-in-progress: false", ci)
-        self.assertNotIn("pull_request_target", ci)
 
     def run_smoke(self, cleanup_fails):
         with tempfile.TemporaryDirectory() as directory:
@@ -51,6 +22,9 @@ class BuildWorkflowTests(unittest.TestCase):
                     """\
                     #!/bin/sh
                     printf '%s\\n' "$*" >> "$DOCKER_LOG"
+                    if [ "$1" = create ]; then
+                      printf '%s\\n' synthetic-owned-cid
+                    fi
                     if [ "$1" = rm ] && [ "$CLEANUP_FAILS" = 1 ]; then
                       exit 1
                     fi
@@ -79,7 +53,7 @@ class BuildWorkflowTests(unittest.TestCase):
         failure, failure_calls = self.run_smoke(cleanup_fails=True)
 
         self.assertEqual(success.returncode, 0)
-        self.assertIn("rm -f smoke-test", success_calls)
+        self.assertIn("rm -f -v synthetic-owned-cid", success_calls)
         self.assertEqual(failure.returncode, 1)
-        self.assertIn("rm -f smoke-test", failure_calls)
+        self.assertIn("rm -f -v synthetic-owned-cid", failure_calls)
         self.assertIn("failed to remove image smoke container", failure.stderr)

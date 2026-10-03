@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && github.run_id || 'mcp-gitea-rs-image-publication' }}
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && github.ref || 'mcp-gitea-rs-image-publication' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   advisories:
@@ -30,7 +30,7 @@ jobs:
 
   publish:
     needs: [test, image, advisories]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.repository == 'chrisbennight/mcp-gitea-rs'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.repository == 'chrisbennight/mcp-gitea-rs' && needs.image.outputs.image_selected == 'true'
     permissions:
       contents: read
       packages: write
