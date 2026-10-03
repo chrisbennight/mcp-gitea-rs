@@ -32,25 +32,52 @@ jobs:
     needs: [test, image, advisories]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.repository == 'chrisbennight/mcp-gitea-rs' && needs.image.outputs.publish_selected == 'true'
     concurrency:
-      group: mcp-gitea-rs-image-publication-${{ github.ref }}
+      group: mcp-gitea-rs-image-publication
+      queue: max
       cancel-in-progress: false
     permissions:
       contents: read
       packages: write
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Download tested artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          artifact-ids: ${{ needs.image.outputs.artifact_id }}
-          path: ${{ runner.temp }}/validated-image
-          merge-multiple: true
       - name: Install image transfer tool
         run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Authenticate registry access
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io --username "$REGISTRY_USER" --password-stdin
+
+      - name: Prepare image artifact
+        id: candidate
+        run: python3 scripts/image_artifact.py prepare "$RUNNER_TEMP/validated-image"
+
+      - name: Smoke health endpoint
+        env:
+          TEST_IMAGE: ${{ steps.candidate.outputs.image }}
+        run: scripts/smoke-image.sh "$TEST_IMAGE" "mcp-gitea-rs-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Check independent MCP clients
+        env:
+          TEST_IMAGE: ${{ steps.candidate.outputs.image }}
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/mcp-python-client"
+          "$RUNNER_TEMP/mcp-python-client/bin/pip" install 'mcp==2.2.0'
+          npm install --prefix "$RUNNER_TEMP/mcp-typescript-client" --ignore-scripts \
+            --no-audit --no-fund '@modelcontextprotocol/sdk@1.30.0'
+          cp scripts/compatibility/typescript.mjs "$RUNNER_TEMP/mcp-typescript-client/"
+          "$RUNNER_TEMP/mcp-python-client/bin/python" scripts/compatibility/run.py \
+            "$TEST_IMAGE" \
+            --typescript-client "$RUNNER_TEMP/mcp-typescript-client/typescript.mjs"
+
+      - name: Record validated identity
+        run: python3 scripts/image_artifact.py record "$RUNNER_TEMP/validated-image"
+
       - name: Verify publication evidence
         run: python3 scripts/image_artifact.py verify "$RUNNER_TEMP/validated-image"
       - name: Read current main for publication
@@ -90,6 +117,13 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
         run: |
           set -euo pipefail
-          trap 'skopeo logout ghcr.io >/dev/null' EXIT
-          printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io --username "$REGISTRY_USER" --password-stdin
           python3 scripts/image_artifact.py publish "$RUNNER_TEMP/validated-image"
+      - name: Remove qualified local image
+        if: always()
+        env:
+          CANDIDATE_TAG: ${{ steps.candidate.outputs.candidate_tag }}
+        run: |
+          if [[ -n "$CANDIDATE_TAG" ]]; then docker image rm "$CANDIDATE_TAG"; fi
+      - name: Remove registry credentials
+        if: always()
+        run: skopeo logout ghcr.io

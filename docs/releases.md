@@ -19,15 +19,16 @@ additional Gitea versions, Forgejo, ARM, and multi-user operation is not implied
 5. Record the image digest and CI link alongside the version's change notes.
    Consumers should deploy the digest and retain the prior digest for rollback.
 
-CI rejects a mismatched tag before building or looking up an image. The image job
-builds an OCI archive, loads its exact configuration into Docker, and runs the
-health and independent Python and TypeScript MCP checks against that image ID.
-It records the archive hash, manifest digest, source revision, and workflow run
-and attempt only after those checks pass. Publication downloads the artifact by
-its immutable ID from that same run, verifies the evidence, and copies it with
-Skopeo's digest-preservation option. It checks each published digest against the
-validated manifest and records the equality in the job summary. No image is
-rebuilt during publication.
+CI rejects a mismatched tag before building or looking up an image. Trusted main
+and version-tag jobs share one publication queue. Inside that queue, the job
+builds or retrieves an OCI archive, loads its exact configuration into Docker,
+and runs the health and independent Python and TypeScript MCP checks against
+that image ID. It records the archive hash, manifest digest, source revision,
+and workflow run and attempt only after those checks pass. Publication verifies
+that evidence and copies the same archive with Skopeo's digest-preservation
+option. It checks each published digest against the validated manifest and
+records the equality in the job summary. Pull-request and helper-only image
+qualification retains its archive separately for inspection.
 
 Existing revision tags are retrieved and subjected to the same client checks,
 so a rerun or version-tag push can reuse an immutable revision. An existing
