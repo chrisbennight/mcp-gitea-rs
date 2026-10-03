@@ -30,7 +30,7 @@ jobs:
 
   publish:
     needs: [test, image, advisories]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.repository == 'chrisbennight/mcp-gitea-rs' && needs.image.outputs.image_selected == 'true'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && github.repository == 'chrisbennight/mcp-gitea-rs' && needs.image.outputs.publish_selected == 'true'
     permissions:
       contents: read
       packages: write

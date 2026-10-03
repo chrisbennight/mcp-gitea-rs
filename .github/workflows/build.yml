@@ -5,6 +5,8 @@ on:
     outputs:
       image_selected:
         value: ${{ jobs.image.outputs.image_selected }}
+      publish_selected:
+        value: ${{ jobs.image.outputs.publish_selected }}
       artifact_id:
         value: ${{ jobs.image.outputs.artifact_id }}
 
@@ -18,6 +20,7 @@ jobs:
     outputs:
       artifact_id: ${{ steps.archive.outputs.artifact-id }}
       image_selected: ${{ steps.scope.outputs.image }}
+      publish_selected: ${{ steps.scope.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
