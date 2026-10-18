@@ -2,7 +2,7 @@
 
 use std::{
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -14,10 +14,17 @@ use axum::{
 use gitea_mcp::ResourceOwner;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header, jwk::JwkSet};
 use serde::Deserialize;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 
 const MAX_JWKS_BYTES: usize = 64 * 1024;
 const CACHE_TTL: Duration = Duration::from_mins(1);
+/// A failed refresh is retried after this delay, with or without known keys.
+const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(5);
+/// Keys kept through failed refreshes stop verifying this long after their
+/// last successful refresh. Five minutes rides out an issuer restart, while a
+/// key removed from the published set still stops verifying within minutes
+/// when the key service stays unreachable.
+const MAX_KEY_AGE: Duration = Duration::from_mins(5);
 
 #[derive(Clone)]
 pub struct IdentityVerifier {
@@ -29,8 +36,10 @@ pub struct IdentityVerifier {
 }
 
 struct CachedKeys {
-    keys: Option<JwkSet>,
-    refreshed: Instant,
+    /// The last successfully fetched key set and when it was fetched.
+    keys: Option<(JwkSet, Instant)>,
+    /// The key service is not contacted again before this time.
+    next_refresh: Instant,
 }
 
 #[derive(Deserialize)]
@@ -85,21 +94,30 @@ impl IdentityVerifier {
     }
 
     async fn keys(&self) -> Option<JwkSet> {
-        // Serialize refreshes and cache failures too. Unknown key IDs cannot
-        // force unbounded requests to the configured key service.
+        // Serialize refreshes and space out failed ones too. Unknown key IDs
+        // and an unavailable key service cannot force unbounded requests to it.
         let mut cache = self.cache.lock().await;
-        if let Some(cached) = cache
+        if cache
             .as_ref()
-            .filter(|cached| cached.refreshed.elapsed() < CACHE_TTL)
+            .is_none_or(|cached| Instant::now() >= cached.next_refresh)
         {
-            return cached.keys.clone();
+            let fetched = self.fetch_keys().await;
+            let now = Instant::now();
+            let (keys, delay) = match fetched {
+                Some(keys) => (Some((keys, now)), CACHE_TTL),
+                // Keep the last good keys; MAX_KEY_AGE bounds how long they verify.
+                None => (
+                    cache.take().and_then(|cached| cached.keys),
+                    RETRY_AFTER_FAILURE,
+                ),
+            };
+            *cache = Some(CachedKeys {
+                keys,
+                next_refresh: now + delay,
+            });
         }
-        let keys = self.fetch_keys().await;
-        *cache = Some(CachedKeys {
-            keys: keys.clone(),
-            refreshed: Instant::now(),
-        });
-        keys
+        let (keys, refreshed) = cache.as_ref()?.keys.as_ref()?;
+        (refreshed.elapsed() < MAX_KEY_AGE).then(|| keys.clone())
     }
 
     async fn fetch_keys(&self) -> Option<JwkSet> {
@@ -188,6 +206,7 @@ mod tests {
     use axum::{Json, Router, routing::get};
     use jsonwebtoken::{EncodingKey, Header, encode};
     use serde_json::{Value, json};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tokio_util::sync::CancellationToken;
 
     const BEARER: &str = "synthetic-current-bearer-32-bytes-long";
@@ -223,10 +242,40 @@ mod tests {
         (origin, task)
     }
 
+    /// Loopback key service that a test can make unavailable.
+    #[derive(Default)]
+    struct KeyService {
+        unavailable: AtomicBool,
+        requests: AtomicUsize,
+    }
+
+    impl KeyService {
+        fn set_unavailable(&self, unavailable: bool) {
+            self.unavailable.store(unavailable, Ordering::SeqCst);
+        }
+
+        fn requests(&self) -> usize {
+            self.requests.load(Ordering::SeqCst)
+        }
+    }
+
+    async fn jwks(State(service): State<Arc<KeyService>>) -> Response {
+        service.requests.fetch_add(1, Ordering::SeqCst);
+        if service.unavailable.load(Ordering::SeqCst) {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+        Json(json!({"keys":[{"kty":"OKP", "crv":"Ed25519", "alg":"EdDSA", "use":"sig", "kid":"fixture", "x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}]})).into_response()
+    }
+
     async fn verifier() -> (IdentityVerifier, tokio::task::JoinHandle<()>) {
-        let (origin, task) = serve(Router::new().route("/jwks", get(|| async {
-            Json(json!({"keys":[{"kty":"OKP", "crv":"Ed25519", "alg":"EdDSA", "use":"sig", "kid":"fixture", "x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}]}))
-        }))).await;
+        verifier_for(Arc::default()).await
+    }
+
+    async fn verifier_for(
+        service: Arc<KeyService>,
+    ) -> (IdentityVerifier, tokio::task::JoinHandle<()>) {
+        let (origin, task) =
+            serve(Router::new().route("/jwks", get(jwks)).with_state(service)).await;
         (
             IdentityVerifier::new(
                 &format!("{origin}/jwks"),
@@ -276,6 +325,93 @@ mod tests {
         );
         assert!(verifier.verify("invalid").await.is_none());
         task.abort();
+    }
+
+    /// Move the verifier's clock forward. The clock keeps running during
+    /// loopback requests, because a paused clock auto-advances to the client's
+    /// request timeout while the runtime waits for I/O.
+    async fn elapse(duration: Duration) {
+        tokio::time::pause();
+        tokio::time::advance(duration).await;
+        tokio::time::resume();
+    }
+
+    #[tokio::test]
+    async fn known_keys_verify_when_a_refresh_fails_after_the_cache_period() {
+        let service = Arc::new(KeyService::default());
+        let (verifier, task) = verifier_for(service.clone()).await;
+        let signed = token("alice", json!({}));
+        assert!(verifier.verify(&signed).await.is_some());
+        service.set_unavailable(true);
+        elapse(CACHE_TTL).await;
+        assert_eq!(
+            verifier.verify(&signed).await,
+            ResourceOwner::verified("https://idp.test", "alice")
+        );
+        assert_eq!(service.requests(), 2);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_first_fetch_is_retried_after_the_short_interval() {
+        let service = Arc::new(KeyService::default());
+        service.set_unavailable(true);
+        let (verifier, task) = verifier_for(service.clone()).await;
+        let signed = token("alice", json!({}));
+        assert!(verifier.verify(&signed).await.is_none());
+        service.set_unavailable(false);
+        assert!(verifier.verify(&signed).await.is_none());
+        assert_eq!(service.requests(), 1);
+        elapse(RETRY_AFTER_FAILURE).await;
+        assert!(verifier.verify(&signed).await.is_some());
+        assert_eq!(service.requests(), 2);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn retained_keys_stop_verifying_after_the_maximum_age() {
+        let service = Arc::new(KeyService::default());
+        let (verifier, task) = verifier_for(service.clone()).await;
+        let signed = token("alice", json!({}));
+        assert!(verifier.verify(&signed).await.is_some());
+        service.set_unavailable(true);
+        elapse(MAX_KEY_AGE.saturating_sub(Duration::from_secs(1))).await;
+        assert!(verifier.verify(&signed).await.is_some());
+        elapse(RETRY_AFTER_FAILURE).await;
+        assert!(verifier.verify(&signed).await.is_none());
+        assert_eq!(service.requests(), 3);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn refreshes_stay_rate_limited_while_the_key_service_fails() {
+        for known in [false, true] {
+            let service = Arc::new(KeyService::default());
+            let (verifier, task) = verifier_for(service.clone()).await;
+            let signed = token("alice", json!({}));
+            if known {
+                assert!(verifier.verify(&signed).await.is_some());
+                elapse(CACHE_TTL).await;
+            }
+            service.set_unavailable(true);
+            let before = service.requests();
+            for (step, attempts) in [
+                (Duration::ZERO, 1),
+                (
+                    RETRY_AFTER_FAILURE.saturating_sub(Duration::from_secs(1)),
+                    1,
+                ),
+                (Duration::from_secs(1), 2),
+            ] {
+                elapse(step).await;
+                // Concurrent callers share one serialized refresh.
+                let owners =
+                    futures_util::future::join_all((0..8).map(|_| verifier.verify(&signed))).await;
+                assert!(owners.iter().all(|owner| owner.is_some() == known));
+                assert_eq!(service.requests() - before, attempts, "known keys: {known}");
+            }
+            task.abort();
+        }
     }
 
     struct Rpc {

@@ -46,8 +46,13 @@ continues to own policy and permission enforcement for upstream operations.
 
 The JWKS URL must use HTTPS or HTTP on a trusted private/loopback boundary.
 Redirects and proxy environment settings are disabled for key retrieval. Key
-responses are bounded to 64 KiB and 32 keys; successful and failed fetches are
-cached for 60 seconds. Publish overlapping keys before rotating signing keys.
+responses are bounded to 64 KiB and 32 keys. A successful fetch is cached for
+60 seconds, and a failed fetch is retried after 5 seconds. Keys from the last
+successful fetch keep verifying through failed fetches for up to 5 minutes, so
+a brief key-service outage, such as a gateway restart, does not reject callers.
+Publish overlapping keys before rotating signing keys. A key removed from the
+published set stops verifying within 60 seconds, or within 5 minutes while the
+key service is unreachable.
 The retained-store registry holds at most 256 identities and reclaims idle,
 empty stores. Payloads retain the shared 64 MiB limit and 15-minute expiry.
 
