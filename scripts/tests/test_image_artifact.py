@@ -133,6 +133,40 @@ class ImageArtifactTests(unittest.TestCase):
                     if len(observed) == 1:
                         self.assertEqual(calls, [])
 
+    def test_publication_record_binds_verified_image_and_exact_source_attempt(self):
+        expected = self.receipt()["manifest_digest"]
+        record_path = self.directory / "gitea-publication.json"
+        def remote(reference):
+            self.assertFalse(record_path.exists())
+            return expected
+        def command(argv, **kwargs):
+            if argv[1] == "inspect":
+                return self.inspect(argv)
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "fixture-token"}), \
+                patch.object(artifact, "command", side_effect=command), patch.object(artifact, "remote_digest", side_effect=remote):
+            artifact.publish(self.directory)
+        self.assertEqual(json.loads(record_path.read_text()), {
+            "schema_version": 1, "source_repository": artifact.REPOSITORY,
+            "source_commit": self.ctx["GITHUB_SHA"], "source_ref": "refs/heads/main",
+            "workflow": ".github/workflows/ci.yml", "run_id": 123, "run_attempt": 1,
+            "images": [{"repository": artifact.IMAGE, "tag": "sha-" + self.ctx["GITHUB_SHA"],
+                        "digest": expected, "platforms": ["linux/amd64"]}],
+        })
+        for changed in [{}, {"GITHUB_RUN_ATTEMPT": "2"}]:
+            record_path.write_text("stale publication")
+            with self.subTest(changed=changed), patch.dict(os.environ, changed), \
+                    patch.object(artifact, "command", side_effect=command), \
+                    patch.object(artifact, "remote_digest", side_effect=[None, expected, "sha256:" + "b" * 64]):
+                with self.assertRaises(artifact.ArtifactError):
+                    artifact.publish(self.directory)
+            self.assertFalse(record_path.exists())
+        self.ctx["GITHUB_RUN_ATTEMPT"] = "2"
+        with patch.dict(os.environ, self.ctx):
+            self.receipt()
+            with patch.object(artifact, "command", side_effect=command), patch.object(artifact, "remote_digest", return_value=expected):
+                artifact.publish(self.directory)
+        self.assertEqual(json.loads(record_path.read_text())["run_attempt"], 2)
+
     def test_version_conflict_blocks_revision_publication_and_version_never_advances_latest(self):
         version = artifact.tomllib.loads((artifact.ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         self.ctx["GITHUB_REF"] = "refs/tags/v" + version

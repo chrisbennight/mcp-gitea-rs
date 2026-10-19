@@ -161,6 +161,8 @@ def verify(directory):
 
 
 def publish(directory):
+    publication = directory / "gitea-publication.json"
+    publication.unlink(missing_ok=True)
     ctx, tag, evidence = verify(directory)
     expected = evidence["manifest_digest"]
     revision = IMAGE + ":sha-" + ctx["GITHUB_SHA"]
@@ -176,6 +178,17 @@ def publish(directory):
         if remote_digest(reference) != expected:
             raise ArtifactError("published manifest digest differs from validated artifact")
         print(reference + " = " + expected)
+    publication.write_text(json.dumps({
+        "schema_version": 1,
+        "source_repository": ctx["GITHUB_REPOSITORY"],
+        "source_commit": ctx["GITHUB_SHA"],
+        "source_ref": ctx["GITHUB_REF"],
+        "workflow": ".github/workflows/ci.yml",
+        "run_id": int(ctx["GITHUB_RUN_ID"]),
+        "run_attempt": int(ctx["GITHUB_RUN_ATTEMPT"]),
+        "images": [{"repository": IMAGE, "tag": "sha-" + ctx["GITHUB_SHA"],
+                    "digest": expected, "platforms": ["linux/amd64"]}],
+    }, sort_keys=True) + "\n")
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as output:
         output.write("Validated and published image: `" + IMAGE + "@" + expected + "`\n")
 
