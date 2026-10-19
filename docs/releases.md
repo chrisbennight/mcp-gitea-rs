@@ -27,8 +27,15 @@ that image ID. It records the archive hash, manifest digest, source revision,
 and workflow run and attempt only after those checks pass. Publication verifies
 that evidence and copies the same archive with Skopeo's digest-preservation
 option. It checks each published digest against the validated manifest and
-records the equality in the job summary. Pull-request and helper-only image
-qualification retains its archive separately for inspection.
+records the equality in the job summary. After all intended targets verify,
+it writes `gitea-publication.json`; CI retains that exact file in
+`gitea-publication-<run ID>-<run attempt>`. The record identifies the canonical
+source repository, full commit, source ref, publication workflow, run and attempt,
+and the verified revision tag, manifest digest, and platform. A skipped or failed
+publication does not upload a record. Consumers must authenticate the designated
+successful workflow run and its artifact; this unsigned JSON is not standalone
+proof of publication and grants no deployment authority. Pull-request and
+helper-only image qualification retains its archive separately for inspection.
 
 Existing revision tags are retrieved and subjected to the same client checks,
 so a rerun or version-tag push can reuse an immutable revision. An existing

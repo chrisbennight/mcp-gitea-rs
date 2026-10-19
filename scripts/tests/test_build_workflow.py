@@ -48,6 +48,18 @@ class BuildWorkflowTests(unittest.TestCase):
             calls = log.read_text().splitlines() if log.exists() else []
         return result, calls
 
+    def test_publication_artifact_requires_success_and_binds_the_workflow_attempt(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        publication = workflow.split("      - name: Publish tested artifact\n", 1)[1]
+        publish, retained = publication.split("      - name: Retain verified publication record\n", 1)
+        retained = retained.split("      - name: Remove qualified local image\n", 1)[0]
+        self.assertIn("        id: publish\n", publish)
+        self.assertIn("steps.release_scope.outputs.current == 'true'", publish)
+        self.assertIn("        if: steps.publish.outcome == 'success'\n", retained)
+        self.assertIn("name: gitea-publication-${{ github.run_id }}-${{ github.run_attempt }}", retained)
+        self.assertIn("path: ${{ runner.temp }}/validated-image/gitea-publication.json", retained)
+        self.assertIn("if-no-files-found: error", retained)
+
     def test_smoke_cleanup_fails_loudly(self):
         success, success_calls = self.run_smoke(cleanup_fails=False)
         failure, failure_calls = self.run_smoke(cleanup_fails=True)

@@ -111,6 +111,7 @@ jobs:
           if [[ "$current" == false ]]; then echo 'SKIP: newer main changes application inputs'; fi
 
       - name: Publish tested artifact
+        id: publish
         if: (true) && steps.release_scope.outputs.current == 'true'
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -118,6 +119,14 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/image_artifact.py publish "$RUNNER_TEMP/validated-image"
+      - name: Retain verified publication record
+        if: steps.publish.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gitea-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/validated-image/gitea-publication.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Remove qualified local image
         if: always()
         env:
